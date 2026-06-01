@@ -1,13 +1,14 @@
-"""LLM summary placeholder for SciDaily."""
+"""Legacy helper: non-LLM abstract snippet generation."""
 
 
-def summarize_abstract(abstract: str) -> str:
-    # TODO: call OpenAI/Kimi/DeepSeek API and return <=100 Chinese chars.
-    return abstract[:60]
+def summarize_abstract(abstract: str, max_chars: int = 120) -> str:
+    """Return a deterministic short snippet without any LLM dependency."""
+    text = " ".join(abstract.split())
+    return text[:max_chars]
 
 
 def main() -> None:
-    sample = "This is a sample abstract for summarization."
+    sample = "This is a sample abstract for deterministic snippet generation."
     print(summarize_abstract(sample))
 
 

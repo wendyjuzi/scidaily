@@ -10,3 +10,7 @@
 /.clang-tidy
 **/.test
 /.appanalyzer
+/backend/outputs
+/backend/data
+*.db
+**/__pycache__

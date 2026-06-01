@@ -1,0 +1,57 @@
+database_path: ../data/research_daily.db
+
+source:
+  arxiv_categories:
+    - cs.AI
+    - cs.LG
+    - cs.CL
+  extra_rss:
+    - https://huggingface.co/papers/rss.xml
+  max_items_per_feed: 80
+  github_top_n: 20
+
+filter:
+  mode: simple
+  tfidf_min_score: 0.07
+  keywords:
+    - agent
+    - reasoning
+    - diagnosis
+    - medical
+    - multi-agent
+    - llm
+  sections:
+    - name: Agent方向
+      keywords: [agent, multi-agent]
+    - name: LLM方向
+      keywords: [llm, reasoning]
+    - name: Medical AI方向
+      keywords: [medical, diagnosis, clinical]
+
+report:
+  timezone: Asia/Shanghai
+  title: AI科研日报
+  output_dir: ../outputs
+  template_path: ../templates/daily_report.html.j2
+
+schedule:
+  hour: 8
+  minute: 0
+
+push:
+  email:
+    enabled: false
+    host: smtp.qq.com
+    port: 465
+    username: ""
+    password: ""
+    sender: ""
+    receivers: []
+    use_ssl: true
+  wecom:
+    enabled: false
+    webhook: ""
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""

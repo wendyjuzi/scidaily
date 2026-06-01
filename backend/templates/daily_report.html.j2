@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ title }} {{ date }}</title>
+    <style>
+      :root {
+        --bg: #f6f8fb;
+        --card: #ffffff;
+        --ink: #1f2a37;
+        --muted: #5f6d7a;
+        --accent: #0f766e;
+        --line: #dbe3ee;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: linear-gradient(180deg, #eef5ff, var(--bg));
+        color: var(--ink);
+      }
+      .wrap {
+        max-width: 860px;
+        margin: 0 auto;
+      }
+      .header {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 20px 24px;
+        margin-bottom: 20px;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 28px;
+      }
+      .header p {
+        margin: 8px 0 0;
+        color: var(--muted);
+      }
+      .content {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 20px 24px;
+        line-height: 1.75;
+      }
+      h2, h3 {
+        color: var(--accent);
+      }
+      a {
+        color: #0b57d0;
+        text-decoration: none;
+      }
+      blockquote {
+        margin: 12px 0;
+        padding: 12px 14px;
+        background: #f4f8f7;
+        border-left: 4px solid #0f766e;
+      }
+      ul {
+        padding-left: 22px;
+      }
+      code {
+        background: #f0f4fa;
+        border-radius: 6px;
+        padding: 2px 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <section class="header">
+        <h1>{{ title }}</h1>
+        <p>{{ date }} 自动生成</p>
+      </section>
+      <section class="content">{{ content }}</section>
+    </div>
+  </body>
+</html>
+
