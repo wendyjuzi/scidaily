@@ -1,12 +1,16 @@
 import { router } from '@kit.ArkUI';
 import { ResearchNews } from '../models/ResearchNews';
+import { authService } from '../services/AuthService';
 import { newsService } from '../services/NewsService';
+import { personalCenterService } from '../services/PersonalCenterService';
 
 @Entry
 @Component
 struct Detail {
   @State news: ResearchNews | undefined = undefined;
   @State isBookmarked: boolean = false;
+  @State isLiked: boolean = false;
+  @State errorMessage: string = '';
 
   aboutToAppear(): void {
     const params = (router.getParams() as Record<string, string> | undefined) ?? {};
@@ -15,22 +19,84 @@ struct Detail {
       return;
     }
     this.news = newsService.getById(id);
-    if (this.news) {
-      this.isBookmarked = newsService.isBookmarked(this.news.id);
+    const currentNews = this.news;
+    if (currentNews !== undefined) {
+      this.isBookmarked = newsService.isBookmarked(currentNews.id);
+      if (authService.isLoggedIn()) {
+        personalCenterService.addHistory(currentNews).catch((error: Error) => {
+          this.errorMessage = error.message;
+        });
+        personalCenterService.isCollected(currentNews.id).then((active: boolean) => {
+          this.isBookmarked = active;
+          newsService.setBookmark(currentNews.id, active);
+        }).catch((error: Error) => {
+          this.errorMessage = error.message;
+        });
+        personalCenterService.isLiked(currentNews.id).then((active: boolean) => {
+          this.isLiked = active;
+        }).catch((error: Error) => {
+          this.errorMessage = error.message;
+        });
+      }
     }
   }
 
-  private toggleBookmark(): void {
+  private async toggleBookmark(): Promise<void> {
     if (!this.news) {
       return;
     }
-    this.isBookmarked = newsService.toggleBookmark(this.news.id);
+    if (!authService.isLoggedIn()) {
+      router.pushUrl({ url: 'pages/Login' });
+      return;
+    }
+    try {
+      if (this.isBookmarked) {
+        await personalCenterService.removeCollection(this.news.id);
+        this.isBookmarked = false;
+      } else {
+        await personalCenterService.addCollection(this.news);
+        this.isBookmarked = true;
+      }
+      this.errorMessage = '';
+    } catch (error) {
+      if (error instanceof Error) {
+        this.errorMessage = error.message;
+      } else {
+        this.errorMessage = '收藏操作失败，请稍后重试。';
+      }
+    }
+  }
+
+  private async toggleLike(): Promise<void> {
+    if (!this.news) {
+      return;
+    }
+    if (!authService.isLoggedIn()) {
+      router.pushUrl({ url: 'pages/Login' });
+      return;
+    }
+    try {
+      if (this.isLiked) {
+        await personalCenterService.removeLike(this.news.id);
+        this.isLiked = false;
+      } else {
+        await personalCenterService.addLike(this.news);
+        this.isLiked = true;
+      }
+      this.errorMessage = '';
+    } catch (error) {
+      if (error instanceof Error) {
+        this.errorMessage = error.message;
+      } else {
+        this.errorMessage = '点赞操作失败，请稍后重试。';
+      }
+    }
   }
 
   build() {
     Column({ space: 12 }) {
       Row() {
-        Button('Back')
+        Button('返回')
           .type(ButtonType.Capsule)
           .onClick(() => {
             router.back();
@@ -40,7 +106,7 @@ struct Detail {
       .width('100%');
 
       if (!this.news) {
-        Text('Article not found')
+        Text('未找到该日报内容')
           .fontSize(16)
           .fontColor('#8A94A6');
       } else {
@@ -59,12 +125,12 @@ struct Detail {
         }
         .width('100%');
 
-        Text(`Authors: ${this.news.authors.join(', ')}`)
+        Text(`作者：${this.news.authors.join('、')}`)
           .fontSize(14)
           .fontColor('#475467')
           .width('100%');
 
-        Text('Highlight')
+        Text('核心摘要')
           .fontSize(16)
           .fontWeight(FontWeight.Medium)
           .margin({ top: 6 })
@@ -78,7 +144,7 @@ struct Detail {
           .backgroundColor('#ECF5FF')
           .borderRadius(10);
 
-        Text('Abstract')
+        Text('论文摘要')
           .fontSize(16)
           .fontWeight(FontWeight.Medium)
           .margin({ top: 8 })
@@ -98,19 +164,40 @@ struct Detail {
             .margin({ top: 8 });
         }
 
-        Text(`Source URL: ${this.news.sourceUrl}`)
+        Text(`来源链接：${this.news.sourceUrl}`)
           .fontSize(13)
           .fontColor('#1E88E5')
           .width('100%')
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis });
 
-        Button(this.isBookmarked ? 'Remove Bookmark' : 'Bookmark')
-          .width('100%')
-          .margin({ top: 12 })
-          .onClick(() => {
-            this.toggleBookmark();
-          });
+        if (this.errorMessage.length > 0) {
+          Text(this.errorMessage)
+            .fontSize(13)
+            .fontColor('#D92D20')
+            .width('100%');
+        }
+
+        Row({ space: 10 }) {
+          Button(this.isBookmarked ? '取消收藏' : '收藏')
+            .layoutWeight(1)
+            .height(44)
+            .backgroundColor(this.isBookmarked ? '#EEF6FF' : '#1E88E5')
+            .fontColor(this.isBookmarked ? '#1E88E5' : '#FFFFFF')
+            .onClick(() => {
+              this.toggleBookmark();
+            });
+          Button(this.isLiked ? '取消点赞' : '点赞')
+            .layoutWeight(1)
+            .height(44)
+            .backgroundColor(this.isLiked ? '#FFF1F3' : '#12B76A')
+            .fontColor(this.isLiked ? '#E31B54' : '#FFFFFF')
+            .onClick(() => {
+              this.toggleLike();
+            });
+        }
+        .width('100%')
+        .margin({ top: 12 });
       }
     }
     .width('100%')

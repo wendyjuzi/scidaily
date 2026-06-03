@@ -14,6 +14,14 @@ class BookmarkStore {
     return true;
   }
 
+  add(id: string): void {
+    this.bookmarks.add(id);
+  }
+
+  remove(id: string): void {
+    this.bookmarks.delete(id);
+  }
+
   list(ids: string[]) {
     return ids.filter((id) => this.bookmarks.has(id));
   }

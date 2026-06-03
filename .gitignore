@@ -10,6 +10,10 @@
 /.clang-tidy
 **/.test
 /.appanalyzer
+/.hvigor-user
+/.user-home
+/.localappdata
+/.appdata
 /backend/outputs
 /backend/data
 *.db

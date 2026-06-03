@@ -11,7 +11,12 @@ class NewsService {
   }
 
   getCategories(): NewsCategory[] {
-    return Object.values(NewsCategory);
+    return [
+      NewsCategory.ComputerScience,
+      NewsCategory.Biology,
+      NewsCategory.Materials,
+      NewsCategory.Medicine
+    ];
   }
 
   getById(id: string): ResearchNews | undefined {
@@ -20,13 +25,26 @@ class NewsService {
 
   getBookmarkedNews(): ResearchNews[] {
     const ids = bookmarkStore.list(MOCK_NEWS.map((item) => item.id));
-    return ids
-      .map((id) => this.getById(id))
-      .filter((item): item is ResearchNews => item !== undefined);
+    const result: ResearchNews[] = [];
+    ids.forEach((id: string) => {
+      const item = this.getById(id);
+      if (item !== undefined) {
+        result.push(item);
+      }
+    });
+    return result;
   }
 
   toggleBookmark(id: string): boolean {
     return bookmarkStore.toggle(id);
+  }
+
+  setBookmark(id: string, active: boolean): void {
+    if (active) {
+      bookmarkStore.add(id);
+      return;
+    }
+    bookmarkStore.remove(id);
   }
 
   isBookmarked(id: string): boolean {

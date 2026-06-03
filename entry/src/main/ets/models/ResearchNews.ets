@@ -1,8 +1,8 @@
 export enum NewsCategory {
-  ComputerScience = 'Computer Science',
-  Biology = 'Biology',
-  Materials = 'Materials',
-  Medicine = 'Medicine'
+  ComputerScience = '计算机科学',
+  Biology = '生物学',
+  Materials = '材料科学',
+  Medicine = '医学'
 }
 
 export interface ResearchNews {

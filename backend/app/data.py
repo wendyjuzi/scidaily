@@ -1,55 +1,53 @@
+from typing import List
+
 from app.schemas import NewsItem
 
-MOCK_NEWS: list[NewsItem] = [
+MOCK_NEWS: List[NewsItem] = [
     NewsItem(
         id="20260528-001",
-        title="Foundation Models Improve Multi-Modal Scientific Reasoning",
+        title="基础模型提升多模态科学推理能力",
         abstract=(
-            "We propose a benchmark for multi-modal scientific reasoning and present "
-            "a model that improves accuracy by combining symbolic tool use with "
-            "vision-language reasoning."
+            "我们构建了一个多模态科学推理基准，并提出一种结合符号工具使用"
+            "与视觉语言推理的方法来提升准确率。"
         ),
         ai_summary=(
-            "Tool-augmented multi-modal reasoning significantly improves "
-            "accuracy on science benchmarks."
+            "工具增强的多模态推理显著提升了科学基准任务的准确率。"
         ),
         authors=["A. Chen", "B. Kumar", "L. Wang"],
         published_date="2026-05-28",
-        category="Computer Science",
+        category="计算机科学",
         doi="10.1000/mock.2026.001",
         source_url="https://example.org/paper/20260528-001",
     ),
     NewsItem(
         id="20260528-002",
-        title="Single-Cell Atlas Reveals Dynamic Immune Cell States",
+        title="单细胞图谱揭示动态免疫细胞状态",
         abstract=(
-            "This study constructs a cross-tissue single-cell atlas and identifies "
-            "transient immune states associated with inflammation resolution."
+            "该研究构建了跨组织单细胞图谱，并识别出与炎症消退相关的"
+            "瞬时免疫状态。"
         ),
         ai_summary=(
-            "A single-cell atlas reveals transient immune states during "
-            "inflammation resolution."
+            "单细胞图谱揭示了炎症消退过程中的瞬时免疫状态。"
         ),
         authors=["Y. Li", "M. Patel"],
         published_date="2026-05-28",
-        category="Biology",
+        category="生物学",
         doi="10.1000/mock.2026.002",
         source_url="https://example.org/paper/20260528-002",
     ),
     NewsItem(
         id="20260528-003",
-        title="High-Entropy Perovskites for Stable Solar Conversion",
+        title="高熵钙钛矿用于稳定太阳能转换",
         abstract=(
-            "We design high-entropy perovskite compositions that suppress phase "
-            "segregation and extend operational lifetime under thermal stress."
+            "我们设计了高熵钙钛矿组分，可抑制相分离并在热应力下"
+            "延长器件寿命。"
         ),
         ai_summary=(
-            "High-entropy perovskites suppress phase segregation and improve "
-            "thermal stability."
+            "高熵钙钛矿能够抑制相分离并提升热稳定性。"
         ),
         authors=["R. Singh", "J. Zhao", "E. Rossi"],
         published_date="2026-05-28",
-        category="Materials",
+        category="材料科学",
         doi="10.1000/mock.2026.003",
         source_url="https://example.org/paper/20260528-003",
     ),

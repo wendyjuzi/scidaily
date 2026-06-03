@@ -1,6 +1,11 @@
 {
   "src": [
     "pages/Index",
-    "pages/Detail"
+    "pages/Detail",
+    "pages/Login",
+    "pages/ProfileEdit",
+    "pages/PersonalList",
+    "pages/Settings",
+    "pages/SecuritySettings"
   ]
 }
