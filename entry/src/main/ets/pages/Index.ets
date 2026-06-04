@@ -1,7 +1,9 @@
 import { router } from '@kit.ArkUI';
+import { NotificationBundle } from '../models/Community';
 import { ResearchNews } from '../models/ResearchNews';
 import { PersonalStats, UserProfile } from '../models/User';
 import { authService } from '../services/AuthService';
+import { communityService } from '../services/CommunityService';
 import { newsService } from '../services/NewsService';
 import { personalCenterService } from '../services/PersonalCenterService';
 
@@ -21,6 +23,7 @@ struct Index {
     historyCount: 0,
     continuousDays: 0
   };
+  @State unreadCount: number = 0;
   private tabsController: TabsController = new TabsController();
 
   aboutToAppear(): void {
@@ -56,9 +59,15 @@ struct Index {
       }).catch((error: Error) => {
         this.profileStats = this.emptyStats();
       });
+      communityService.getNotifications().then((bundle: NotificationBundle) => {
+        this.unreadCount = bundle.unreadCount;
+      }).catch((error: Error) => {
+        this.unreadCount = 0;
+      });
       return;
     }
     this.profileStats = this.emptyStats();
+    this.unreadCount = 0;
   }
 
   private emptyStats(): PersonalStats {
@@ -225,6 +234,10 @@ struct Index {
         this.openProtectedPage('pages/SecuritySettings');
       } else if (action === 'settings') {
         this.openProtectedPage('pages/Settings');
+      } else if (action === 'dashboard') {
+        this.openProtectedPage('pages/ResearchDashboard');
+      } else if (action === 'messages') {
+        this.openProtectedPage('pages/Messages');
       } else {
         this.openPersonalList(action);
       }
@@ -322,6 +335,12 @@ struct Index {
           this.menuRow('我的收藏', '收藏的论文与日报内容', 'collections');
           this.menuRow('我的点赞', '点赞过的日报与论文卡片', 'likes');
           this.menuRow('浏览记录', '最近浏览过的科研内容', 'history');
+        }
+        .width('100%');
+
+        Column({ space: 10 }) {
+          this.menuRow('科研数据看板', '日/周/月科研成长数据可视化', 'dashboard');
+          this.menuRow('消息通知', this.unreadCount > 0 ? `${this.unreadCount} 条未读消息待处理` : '点赞、评论回复和系统公告', 'messages');
         }
         .width('100%');
 

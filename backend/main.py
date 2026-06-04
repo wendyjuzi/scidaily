@@ -6,10 +6,15 @@ from app.schemas import (
     ApiMessage,
     AuthResponse,
     CategoryResponse,
+    CommentCreateRequest,
+    CommentItem,
+    CommentListResponse,
+    InteractionSummary,
     LoginRequest,
     MessageSettings,
     NewsItem,
     NewsListResponse,
+    NotificationListResponse,
     PasswordResetRequest,
     InteractionState,
     PersonalItem,
@@ -18,6 +23,7 @@ from app.schemas import (
     PersonalStats,
     PrivacySettings,
     RegisterRequest,
+    ResearchStatsResponse,
     SettingsResponse,
     UserListResponse,
     UserProfile,
@@ -64,6 +70,37 @@ def news_detail(news_id: str):
     if item is None:
         raise HTTPException(status_code=404, detail="News item not found")
     return item
+
+
+@app.get("/api/v1/news/{news_id}/interactions", response_model=InteractionSummary)
+def news_interactions(news_id: str):
+    return store.get_interaction_summary(news_id)
+
+
+@app.get("/api/v1/news/{news_id}/comments", response_model=CommentListResponse)
+def news_comments(news_id: str, page: int = 1, size: int = 20, sort: str = "latest"):
+    return store.list_comments(news_id, page=page, size=size, sort=sort)
+
+
+@app.post("/api/v1/news/{news_id}/comments", response_model=CommentItem, status_code=status.HTTP_201_CREATED)
+def add_news_comment(
+    news_id: str,
+    payload: CommentCreateRequest,
+    current_user: UserProfile = Depends(get_current_user),
+):
+    try:
+        return store.add_comment(news_id, current_user.id, payload)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.delete("/api/v1/comments/{comment_id}", response_model=ApiMessage)
+def delete_news_comment(comment_id: int, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        store.delete_comment(comment_id, current_user.id)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    return ApiMessage(message="Comment deleted")
 
 
 @app.get("/api/v1/categories", response_model=CategoryResponse)
@@ -144,6 +181,13 @@ def my_stats(current_user: UserProfile = Depends(get_current_user)):
     return store.get_stats(current_user.id)
 
 
+@app.get("/api/v1/users/me/research-stats", response_model=ResearchStatsResponse)
+def my_research_stats(range: str = "week", current_user: UserProfile = Depends(get_current_user)):
+    if range not in ("day", "week", "month"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported range")
+    return store.get_research_stats(current_user.id, range)
+
+
 @app.get("/api/v1/users/me/posts", response_model=PersonalListResponse)
 def my_posts(current_user: UserProfile = Depends(get_current_user)):
     return PersonalListResponse(items=store.get_personal_items("posts", current_user.id))
@@ -214,6 +258,29 @@ def add_my_history(payload: PersonalItemActionRequest, current_user: UserProfile
 def clear_my_history(current_user: UserProfile = Depends(get_current_user)):
     store.clear_history(current_user.id)
     return ApiMessage(message="Browsing history cleared")
+
+
+@app.get("/api/v1/users/me/notifications", response_model=NotificationListResponse)
+def my_notifications(current_user: UserProfile = Depends(get_current_user)):
+    return store.list_notifications(current_user.id)
+
+
+@app.put("/api/v1/users/me/notifications/{notice_id}/read", response_model=ApiMessage)
+def read_my_notification(notice_id: int, current_user: UserProfile = Depends(get_current_user)):
+    store.mark_notification_read(current_user.id, notice_id)
+    return ApiMessage(message="Notification marked as read")
+
+
+@app.put("/api/v1/users/me/notifications/read-all", response_model=ApiMessage)
+def read_all_my_notifications(current_user: UserProfile = Depends(get_current_user)):
+    store.mark_all_notifications_read(current_user.id)
+    return ApiMessage(message="All notifications marked as read")
+
+
+@app.delete("/api/v1/users/me/notifications", response_model=ApiMessage)
+def clear_my_notifications(current_user: UserProfile = Depends(get_current_user)):
+    store.clear_notifications(current_user.id)
+    return ApiMessage(message="Notifications cleared")
 
 
 @app.get("/api/v1/users/{user_id}", response_model=UserProfile)

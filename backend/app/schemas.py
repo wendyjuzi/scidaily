@@ -119,3 +119,63 @@ class PersonalItemActionRequest(BaseModel):
 
 class InteractionState(BaseModel):
     active: bool
+
+
+class InteractionSummary(BaseModel):
+    like_count: int
+    collection_count: int
+    comment_count: int
+
+
+class CommentCreateRequest(BaseModel):
+    content: str
+    parent_id: Optional[int] = None
+
+
+class CommentItem(BaseModel):
+    id: int
+    news_id: str
+    user_id: int
+    nickname: str
+    content: str
+    parent_id: Optional[int] = None
+    reply_to_nickname: Optional[str] = None
+    like_count: int
+    created_at: str
+
+
+class CommentListResponse(BaseModel):
+    items: List[CommentItem]
+    total: int
+    page: int
+    size: int
+
+
+class ResearchStatsPoint(BaseModel):
+    label: str
+    daily_count: int
+    experiment_count: int
+    literature_count: int
+
+
+class ResearchStatsResponse(BaseModel):
+    range: str
+    total_daily: int
+    total_experiment: int
+    total_literature: int
+    points: List[ResearchStatsPoint]
+
+
+class NotificationItem(BaseModel):
+    id: int
+    type: str
+    title: str
+    content: str
+    related_item_id: Optional[str] = None
+    is_read: bool
+    created_at: str
+
+
+class NotificationListResponse(BaseModel):
+    items: List[NotificationItem]
+    unread_count: int

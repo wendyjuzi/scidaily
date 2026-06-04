@@ -5,6 +5,8 @@
     "pages/Login",
     "pages/ProfileEdit",
     "pages/PersonalList",
+    "pages/ResearchDashboard",
+    "pages/Messages",
     "pages/Settings",
     "pages/SecuritySettings"
   ]

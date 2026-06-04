@@ -9,12 +9,20 @@ from pathlib import Path
 from typing import List, Optional
 
 from app.schemas import (
+    CommentCreateRequest,
+    CommentItem,
+    CommentListResponse,
+    InteractionSummary,
     MessageSettings,
+    NotificationItem,
+    NotificationListResponse,
     PersonalItem,
     PersonalItemActionRequest,
     PersonalStats,
     PrivacySettings,
     RegisterRequest,
+    ResearchStatsPoint,
+    ResearchStatsResponse,
     SettingsResponse,
     UserProfile,
     UserUpdateRequest,
@@ -125,6 +133,30 @@ class AppStore:
                 summary TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 status TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                news_id TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                parent_id INTEGER,
+                content TEXT NOT NULL,
+                like_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(parent_id) REFERENCES comments(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                related_item_id TEXT,
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             );
             """
@@ -389,6 +421,22 @@ class AppStore:
             (stored_id, user_id, title, summary, created_at, status_text),
         )
         self.conn.commit()
+        if table_key == "likes":
+            self._add_notification(
+                user_id=user_id,
+                notice_type="like",
+                title="点赞成功",
+                content=f"你点赞了《{title}》。",
+                related_item_id=item_id,
+            )
+        elif table_key == "collections":
+            self._add_notification(
+                user_id=user_id,
+                notice_type="system",
+                title="收藏已同步",
+                content=f"《{title}》已加入你的收藏列表。",
+                related_item_id=item_id,
+            )
         return PersonalItem(
             id=stored_id,
             title=title,
@@ -417,6 +465,178 @@ class AppStore:
 
     def clear_history(self, user_id: int) -> None:
         self.conn.execute("DELETE FROM user_browsing_history WHERE user_id = ?", (user_id,))
+        self.conn.commit()
+
+    def get_interaction_summary(self, news_id: str) -> InteractionSummary:
+        like_count = self._count_item_suffix("user_likes", "likes", news_id)
+        collection_count = self._count_item_suffix("user_collections", "collections", news_id)
+        comment_count = int(
+            self.conn.execute("SELECT COUNT(*) FROM comments WHERE news_id = ?", (news_id,)).fetchone()[0]
+        )
+        return InteractionSummary(
+            like_count=like_count,
+            collection_count=collection_count,
+            comment_count=comment_count,
+        )
+
+    def list_comments(self, news_id: str, page: int, size: int, sort: str) -> CommentListResponse:
+        page = max(page, 1)
+        size = min(max(size, 1), 50)
+        offset = (page - 1) * size
+        order_by = "comments.like_count DESC, comments.created_at DESC" if sort == "hot" else "comments.created_at DESC"
+        rows = self.conn.execute(
+            f"""
+            SELECT
+                comments.*,
+                users.nickname AS nickname,
+                parent_users.nickname AS reply_to_nickname
+            FROM comments
+            JOIN users ON users.id = comments.user_id
+            LEFT JOIN comments AS parent_comments ON parent_comments.id = comments.parent_id
+            LEFT JOIN users AS parent_users ON parent_users.id = parent_comments.user_id
+            WHERE comments.news_id = ?
+            ORDER BY {order_by}
+            LIMIT ? OFFSET ?
+            """,
+            (news_id, size, offset),
+        ).fetchall()
+        total = int(self.conn.execute("SELECT COUNT(*) FROM comments WHERE news_id = ?", (news_id,)).fetchone()[0])
+        return CommentListResponse(
+            items=[self._comment_from_row(row) for row in rows],
+            total=total,
+            page=page,
+            size=size,
+        )
+
+    def add_comment(self, news_id: str, user_id: int, payload: CommentCreateRequest) -> CommentItem:
+        content = payload.content.strip()
+        if not content:
+            raise ValueError("Comment content is required")
+        if payload.parent_id is not None:
+            parent = self.conn.execute(
+                "SELECT id, user_id FROM comments WHERE id = ? AND news_id = ?",
+                (payload.parent_id, news_id),
+            ).fetchone()
+            if parent is None:
+                raise ValueError("Parent comment not found")
+        created_at = now_text()
+        cursor = self.conn.execute(
+            """
+            INSERT INTO comments (news_id, user_id, parent_id, content, like_count, created_at)
+            VALUES (?, ?, ?, ?, 0, ?)
+            """,
+            (news_id, user_id, payload.parent_id, content, created_at),
+        )
+        comment_id = int(cursor.lastrowid)
+        self.conn.commit()
+
+        notice_title = "评论已发布" if payload.parent_id is None else "回复已发布"
+        self._add_notification(
+            user_id=user_id,
+            notice_type="comment",
+            title=notice_title,
+            content=content[:80],
+            related_item_id=news_id,
+        )
+        row = self.conn.execute(
+            """
+            SELECT comments.*, users.nickname AS nickname, NULL AS reply_to_nickname
+            FROM comments
+            JOIN users ON users.id = comments.user_id
+            WHERE comments.id = ?
+            """,
+            (comment_id,),
+        ).fetchone()
+        return self._comment_from_row(row)
+
+    def delete_comment(self, comment_id: int, user_id: int) -> None:
+        row = self.conn.execute("SELECT user_id FROM comments WHERE id = ?", (comment_id,)).fetchone()
+        if row is None:
+            raise ValueError("Comment not found")
+        if int(row["user_id"]) != user_id:
+            raise ValueError("You can only delete your own comments")
+        self.conn.execute("DELETE FROM comments WHERE id = ?", (comment_id,))
+        self.conn.commit()
+
+    def get_research_stats(self, user_id: int, range_name: str) -> ResearchStatsResponse:
+        labels = self._stats_labels(range_name)
+        points: list[ResearchStatsPoint] = []
+        rows = self.conn.execute(
+            """
+            SELECT title, summary, created_at FROM user_posts WHERE user_id = ?
+            UNION ALL
+            SELECT title, summary, created_at FROM user_browsing_history WHERE user_id = ?
+            """,
+            (user_id, user_id),
+        ).fetchall()
+        label_set = {label: {"daily": 0, "experiment": 0, "literature": 0} for label in labels}
+        for row in rows:
+            label = row["created_at"][:10]
+            if range_name == "week":
+                label = label[-5:]
+            elif range_name == "month":
+                label = label[-5:]
+            if label not in label_set:
+                continue
+            merged = f"{row['title']} {row['summary']}"
+            label_set[label]["daily"] += 1
+            if "实验" in merged:
+                label_set[label]["experiment"] += 1
+            if "文献" in merged or "论文" in merged:
+                label_set[label]["literature"] += 1
+        for label in labels:
+            values = label_set[label]
+            points.append(
+                ResearchStatsPoint(
+                    label=label,
+                    daily_count=values["daily"],
+                    experiment_count=values["experiment"],
+                    literature_count=values["literature"],
+                )
+            )
+        return ResearchStatsResponse(
+            range=range_name,
+            total_daily=sum(point.daily_count for point in points),
+            total_experiment=sum(point.experiment_count for point in points),
+            total_literature=sum(point.literature_count for point in points),
+            points=points,
+        )
+
+    def list_notifications(self, user_id: int) -> NotificationListResponse:
+        self._ensure_system_notice(user_id)
+        rows = self.conn.execute(
+            """
+            SELECT * FROM notifications
+            WHERE user_id = ?
+            ORDER BY is_read ASC, created_at DESC
+            LIMIT 100
+            """,
+            (user_id,),
+        ).fetchall()
+        unread = int(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0",
+                (user_id,),
+            ).fetchone()[0]
+        )
+        return NotificationListResponse(
+            items=[self._notification_from_row(row) for row in rows],
+            unread_count=unread,
+        )
+
+    def mark_notification_read(self, user_id: int, notice_id: int) -> None:
+        self.conn.execute(
+            "UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id = ?",
+            (user_id, notice_id),
+        )
+        self.conn.commit()
+
+    def mark_all_notifications_read(self, user_id: int) -> None:
+        self.conn.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ?", (user_id,))
+        self.conn.commit()
+
+    def clear_notifications(self, user_id: int) -> None:
+        self.conn.execute("DELETE FROM notifications WHERE user_id = ?", (user_id,))
         self.conn.commit()
 
     def _seed_user_workspace(self, user_id: int) -> None:
@@ -509,6 +729,10 @@ class AppStore:
     def _count_table(self, table: str, user_id: int) -> int:
         return int(self.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE user_id = ?", (user_id,)).fetchone()[0])
 
+    def _count_item_suffix(self, table: str, table_key: str, item_id: str) -> int:
+        suffix = f"%-{table_key}-{item_id.strip()}"
+        return int(self.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE id LIKE ?", (suffix,)).fetchone()[0])
+
     def _table_for_key(self, table_key: str) -> str:
         table_map = {
             "posts": "user_posts",
@@ -539,6 +763,72 @@ class AppStore:
             days += 1
             current = current - timedelta(days=1)
         return days
+
+    def _stats_labels(self, range_name: str) -> list[str]:
+        today = date.today()
+        if range_name == "day":
+            return [today.isoformat()]
+        days = 30 if range_name == "month" else 7
+        labels = []
+        for index in range(days - 1, -1, -1):
+            labels.append((today - timedelta(days=index)).isoformat()[-5:])
+        return labels
+
+    def _comment_from_row(self, row: sqlite3.Row) -> CommentItem:
+        return CommentItem(
+            id=int(row["id"]),
+            news_id=row["news_id"],
+            user_id=int(row["user_id"]),
+            nickname=row["nickname"],
+            content=row["content"],
+            parent_id=row["parent_id"],
+            reply_to_nickname=row["reply_to_nickname"],
+            like_count=int(row["like_count"]),
+            created_at=row["created_at"],
+        )
+
+    def _notification_from_row(self, row: sqlite3.Row) -> NotificationItem:
+        return NotificationItem(
+            id=int(row["id"]),
+            type=row["type"],
+            title=row["title"],
+            content=row["content"],
+            related_item_id=row["related_item_id"],
+            is_read=bool(row["is_read"]),
+            created_at=row["created_at"],
+        )
+
+    def _add_notification(
+        self,
+        user_id: int,
+        notice_type: str,
+        title: str,
+        content: str,
+        related_item_id: Optional[str] = None,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO notifications (user_id, type, title, content, related_item_id, is_read, created_at)
+            VALUES (?, ?, ?, ?, ?, 0, ?)
+            """,
+            (user_id, notice_type, title, content, related_item_id, now_text()),
+        )
+        self.conn.commit()
+
+    def _ensure_system_notice(self, user_id: int) -> None:
+        existing = self.conn.execute(
+            "SELECT id FROM notifications WHERE user_id = ? AND type = 'system' AND related_item_id = 'welcome'",
+            (user_id,),
+        ).fetchone()
+        if existing:
+            return
+        self._add_notification(
+            user_id=user_id,
+            notice_type="system",
+            title="欢迎使用科研日报社区",
+            content="C 分工模块已接入评论、科研统计看板和消息通知。",
+            related_item_id="welcome",
+        )
 
     def _profile_from_row(self, row: sqlite3.Row) -> UserProfile:
         return UserProfile(
