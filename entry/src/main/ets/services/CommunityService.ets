@@ -117,7 +117,7 @@ class CommunityService {
     } catch (error) {
       const items = this.getLocalComments(newsId);
       if (sort === 'hot') {
-        return items.sort((a: CommentItem, b: CommentItem) => b.likeCount - a.likeCount);
+        return items.slice().sort((a: CommentItem, b: CommentItem) => b.likeCount - a.likeCount);
       }
       return items;
     }
@@ -128,6 +128,9 @@ class CommunityService {
     const text = content.trim();
     if (text.length === 0) {
       throw globalErrorHandler.validation('请输入评论内容。');
+    }
+    if (text.length > 200) {
+      throw globalErrorHandler.validation('评论内容不能超过 200 字。');
     }
     try {
       const payload: CommentCreateDto = { content: text };
@@ -319,7 +322,7 @@ class CommunityService {
       parentId: dto.parent_id,
       replyToNickname: dto.reply_to_nickname,
       likeCount: dto.like_count,
-      createdAt: dto.created_at
+      createdAt: this.formatDate(dto.created_at)
     };
   }
 
@@ -352,7 +355,7 @@ class CommunityService {
         content: item.content,
         relatedItemId: item.related_item_id,
         isRead: item.is_read,
-        createdAt: item.created_at
+        createdAt: this.formatDate(item.created_at)
       });
     });
     return {
@@ -399,7 +402,7 @@ class CommunityService {
   }
 
   private localStats(range: string): ResearchStatsBundle {
-    const labels = range === 'month' ? ['05-06', '05-13', '05-20', '05-27', '06-03'] : ['05-29', '05-30', '05-31', '06-01', '06-02', '06-03', '06-04'];
+    const labels = range === 'day' ? [this.todayText()] : this.recentLabels(range === 'month' ? 30 : 7);
     const points: ResearchStatsPoint[] = [];
     labels.forEach((label: string, index: number) => {
       points.push({
@@ -440,7 +443,32 @@ class CommunityService {
 
   private todayText(): string {
     const date = new Date();
-    return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+    return `${date.getFullYear()}-${this.pad2(date.getMonth() + 1)}-${this.pad2(date.getDate())}`;
+  }
+
+  private recentLabels(days: number): string[] {
+    const labels: string[] = [];
+    const current = new Date();
+    for (let index = days - 1; index >= 0; index--) {
+      const date = new Date(current.getTime());
+      date.setDate(current.getDate() - index);
+      labels.push(`${this.pad2(date.getMonth() + 1)}-${this.pad2(date.getDate())}`);
+    }
+    return labels;
+  }
+
+  private formatDate(value: string): string {
+    if (value.length >= 10) {
+      return value.substring(0, 10);
+    }
+    return value;
+  }
+
+  private pad2(value: number): string {
+    if (value < 10) {
+      return `0${value}`;
+    }
+    return value.toString();
   }
 }
 

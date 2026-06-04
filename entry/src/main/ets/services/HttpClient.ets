@@ -111,6 +111,15 @@ class HttpClient {
     if (detail === 'Login required' || detail === 'Session expired') {
       return '登录状态已过期，请重新登录。';
     }
+    if (detail === 'Comment content is required') {
+      return '请输入评论内容。';
+    }
+    if (detail === 'Comment content must be at most 200 characters') {
+      return '评论内容不能超过 200 字。';
+    }
+    if (detail === 'Parent comment not found') {
+      return '要回复的评论不存在。';
+    }
     return detail;
   }
 }

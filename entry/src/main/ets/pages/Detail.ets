@@ -457,6 +457,17 @@ struct Detail {
           }
           .width('100%');
 
+          Row() {
+            Text(this.replyHint.length > 0 ? '当前评论会作为回复发布' : '支持评论与楼中楼回复')
+              .fontSize(11)
+              .fontColor('#98A2B3');
+            Blank();
+            Text(`${this.commentInput.length}/200`)
+              .fontSize(11)
+              .fontColor(this.commentInput.length > 200 ? '#D92D20' : '#98A2B3');
+          }
+          .width('100%');
+
           if (this.comments.length === 0) {
             Text('暂无评论，来发布第一条科研讨论吧。')
               .fontSize(13)

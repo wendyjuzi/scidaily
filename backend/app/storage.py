@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
+from app.data import MOCK_NEWS
 from app.schemas import (
     CommentCreateRequest,
     CommentItem,
@@ -468,8 +469,8 @@ class AppStore:
         self.conn.commit()
 
     def get_interaction_summary(self, news_id: str) -> InteractionSummary:
-        like_count = self._count_item_suffix("user_likes", "likes", news_id)
-        collection_count = self._count_item_suffix("user_collections", "collections", news_id)
+        like_count = self._count_interaction_items("user_likes", "likes", news_id)
+        collection_count = self._count_interaction_items("user_collections", "collections", news_id)
         comment_count = int(
             self.conn.execute("SELECT COUNT(*) FROM comments WHERE news_id = ?", (news_id,)).fetchone()[0]
         )
@@ -512,6 +513,9 @@ class AppStore:
         content = payload.content.strip()
         if not content:
             raise ValueError("Comment content is required")
+        if len(content) > 200:
+            raise ValueError("Comment content must be at most 200 characters")
+        parent_user_id: Optional[int] = None
         if payload.parent_id is not None:
             parent = self.conn.execute(
                 "SELECT id, user_id FROM comments WHERE id = ? AND news_id = ?",
@@ -519,6 +523,7 @@ class AppStore:
             ).fetchone()
             if parent is None:
                 raise ValueError("Parent comment not found")
+            parent_user_id = int(parent["user_id"])
         created_at = now_text()
         cursor = self.conn.execute(
             """
@@ -538,11 +543,25 @@ class AppStore:
             content=content[:80],
             related_item_id=news_id,
         )
+        if parent_user_id is not None and parent_user_id != user_id:
+            replier = self.get_user(user_id)
+            self._add_notification(
+                user_id=parent_user_id,
+                notice_type="comment",
+                title="收到一条评论回复",
+                content=f"{replier.nickname} 回复了你：{content[:60]}",
+                related_item_id=news_id,
+            )
         row = self.conn.execute(
             """
-            SELECT comments.*, users.nickname AS nickname, NULL AS reply_to_nickname
+            SELECT
+                comments.*,
+                users.nickname AS nickname,
+                parent_users.nickname AS reply_to_nickname
             FROM comments
             JOIN users ON users.id = comments.user_id
+            LEFT JOIN comments AS parent_comments ON parent_comments.id = comments.parent_id
+            LEFT JOIN users AS parent_users ON parent_users.id = parent_comments.user_id
             WHERE comments.id = ?
             """,
             (comment_id,),
@@ -733,6 +752,18 @@ class AppStore:
         suffix = f"%-{table_key}-{item_id.strip()}"
         return int(self.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE id LIKE ?", (suffix,)).fetchone()[0])
 
+    def _count_interaction_items(self, table: str, table_key: str, news_id: str) -> int:
+        title = self._news_title(news_id)
+        suffix = f"%-{table_key}-{news_id.strip()}"
+        if title:
+            return int(
+                self.conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE id LIKE ? OR title = ?",
+                    (suffix, title),
+                ).fetchone()[0]
+            )
+        return self._count_item_suffix(table, table_key, news_id)
+
     def _table_for_key(self, table_key: str) -> str:
         table_map = {
             "posts": "user_posts",
@@ -774,6 +805,12 @@ class AppStore:
             labels.append((today - timedelta(days=index)).isoformat()[-5:])
         return labels
 
+    def _news_title(self, news_id: str) -> str:
+        for item in MOCK_NEWS:
+            if item.id == news_id:
+                return item.title
+        return ""
+
     def _comment_from_row(self, row: sqlite3.Row) -> CommentItem:
         return CommentItem(
             id=int(row["id"]),
@@ -806,6 +843,8 @@ class AppStore:
         content: str,
         related_item_id: Optional[str] = None,
     ) -> None:
+        if not self._notification_enabled(user_id, notice_type):
+            return
         self.conn.execute(
             """
             INSERT INTO notifications (user_id, type, title, content, related_item_id, is_read, created_at)
@@ -814,6 +853,16 @@ class AppStore:
             (user_id, notice_type, title, content, related_item_id, now_text()),
         )
         self.conn.commit()
+
+    def _notification_enabled(self, user_id: int, notice_type: str) -> bool:
+        row = self.conn.execute("SELECT * FROM user_settings WHERE user_id = ?", (user_id,)).fetchone()
+        if row is None:
+            return True
+        if notice_type == "like":
+            return bool(row["like_notice"])
+        if notice_type == "comment":
+            return bool(row["comment_notice"])
+        return bool(row["system_notice"])
 
     def _ensure_system_notice(self, user_id: int) -> None:
         existing = self.conn.execute(
