@@ -11,13 +11,7 @@ from research_daily.crawler.rss import fetch_feed
 from research_daily.database import DailyDatabase
 from research_daily.filtering import dedupe_papers, filter_papers
 from research_daily.push import send_email, send_telegram, send_wecom
-from research_daily.reporting import (
-    markdown_to_html,
-    render_html,
-    render_markdown,
-    save_html,
-    save_markdown,
-)
+from research_daily.reporting import render_html, render_markdown, save_html, save_markdown
 
 
 @dataclass(slots=True)
@@ -54,10 +48,10 @@ def run_pipeline(cfg: AppConfig, dry_run: bool = True) -> RunResult:
 
     output_root = Path(cfg.report.output_dir) / today.isoformat()
     template_path = Path(cfg.report.template_path)
+
     markdown_text = render_markdown(filtered, projects, today, cfg.report)
     md_path = save_markdown(markdown_text, today, output_root)
-    html_body = markdown_to_html(markdown_text)
-    html = render_html(html_body, cfg.report, today, template_path)
+    html = render_html(cfg.report, today, template_path, filtered, projects)
     html_path = save_html(html, today, output_root)
 
     db = DailyDatabase(cfg.database_path)

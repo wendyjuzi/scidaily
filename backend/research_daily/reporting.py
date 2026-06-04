@@ -84,9 +84,31 @@ def markdown_to_html(markdown_text: str) -> str:
     return mdlib.markdown(markdown_text, extensions=["tables", "fenced_code"])
 
 
-def render_html(html_body: str, report_cfg: ReportConfig, report_date: date, template_path: Path) -> str:
+def render_html(
+    report_cfg: ReportConfig,
+    report_date: date,
+    template_path: Path,
+    papers: list[PaperRecord],
+    projects: list[ProjectRecord],
+) -> str:
+    grouped = _group_papers(papers)
+    recommended = sorted(
+        papers,
+        key=lambda x: (len(x.matched_keywords), x.publish_time),
+        reverse=True,
+    )[:3]
+    top_projects = sorted(projects, key=lambda x: x.stars, reverse=True)[:6]
+
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.render(title=report_cfg.title, date=report_date.isoformat(), content=html_body)
+    return template.render(
+        title=report_cfg.title,
+        date=report_date.isoformat(),
+        total_papers=len(papers),
+        total_projects=len(projects),
+        sections=grouped,
+        recommended=recommended,
+        top_projects=top_projects,
+    )
 
 
 def save_html(html: str, report_date: date, output_dir: Path) -> Path:

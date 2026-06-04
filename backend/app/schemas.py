@@ -27,6 +27,15 @@ class ApiMessage(BaseModel):
     message: str
 
 
+class ImageUploadRequest(BaseModel):
+    filename: str
+    content_base64: str
+
+
+class ImageUploadResponse(BaseModel):
+    url: str
+
+
 class RegisterRequest(BaseModel):
     username: str
     password: str
@@ -119,6 +128,152 @@ class PersonalItemActionRequest(BaseModel):
 
 class InteractionState(BaseModel):
     active: bool
+
+
+class DailyTemplate(BaseModel):
+    id: str
+    title: str
+    description: str
+    blocks: List[str]
+
+
+class DailyPostBase(BaseModel):
+    title: str
+    summary: str
+    content: str
+    cover_url: Optional[str] = None
+    image_urls: List[str] = []
+    category_id: str
+    tag_ids: List[str] = []
+
+
+class DailyPostCreateRequest(DailyPostBase):
+    status: str = "draft"
+
+
+class DailyPostUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    content: Optional[str] = None
+    cover_url: Optional[str] = None
+    image_urls: Optional[List[str]] = None
+    category_id: Optional[str] = None
+    tag_ids: Optional[List[str]] = None
+    status: Optional[str] = None
+
+
+class DailyPost(BaseModel):
+    id: str
+    author_id: int
+    author_name: str
+    title: str
+    summary: str
+    content: str
+    cover_url: str
+    image_urls: List[str]
+    category_id: str
+    category_name: str
+    tags: List[str]
+    tag_ids: List[str]
+    status: str
+    created_at: str
+    updated_at: str
+    published_at: Optional[str] = None
+
+
+class DailyPostListResponse(BaseModel):
+    items: List[DailyPost]
+    next_offset: int
+    has_more: bool
+
+
+class DailyPostResponse(BaseModel):
+    item: DailyPost
+
+
+class TopicCategory(BaseModel):
+    id: str
+    name: str
+    description: str
+    post_count: int = 0
+
+
+class TopicCategoryRequest(BaseModel):
+    id: Optional[str] = None
+    name: str
+    description: Optional[str] = None
+
+
+class TopicTag(BaseModel):
+    id: str
+    name: str
+    category_id: str
+    category_name: str
+    description: str
+    post_count: int = 0
+
+
+class TopicTagRequest(BaseModel):
+    id: Optional[str] = None
+    name: str
+    category_id: str
+    description: Optional[str] = None
+
+
+class TopicCategoryListResponse(BaseModel):
+    items: List[TopicCategory]
+
+
+class TopicTagListResponse(BaseModel):
+    items: List[TopicTag]
+
+
+class PaperItem(BaseModel):
+    id: str
+    title: str
+    abstract: str
+    authors: List[str]
+    category_id: str
+    category_name: str
+    tags: List[str]
+    tag_ids: List[str]
+    source_url: str
+    pdf_url: str
+    local_pdf_path: Optional[str] = None
+    doi: Optional[str] = None
+    published_at: str
+    created_at: str
+
+
+class PaperCreateRequest(BaseModel):
+    title: str
+    abstract: str
+    authors: List[str]
+    category_id: str
+    tag_ids: List[str] = []
+    source_url: str
+    pdf_url: str
+    local_pdf_path: Optional[str] = None
+    doi: Optional[str] = None
+    published_at: str
+
+
+class PaperListResponse(BaseModel):
+    items: List[PaperItem]
+    next_offset: int
+    has_more: bool
+
+
+class ReadingProgress(BaseModel):
+    paper_id: str
+    current_page: int
+    progress: float
+    updated_at: str
+
+
+class ReadingProgressRequest(BaseModel):
+    current_page: int
+    progress: float
 
 
 class InteractionSummary(BaseModel):

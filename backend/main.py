@@ -1,5 +1,12 @@
+import base64
+import re
+import secrets
+from pathlib import Path
+from typing import Optional
+
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.dependencies import get_current_user
 from app.schemas import (
@@ -10,11 +17,22 @@ from app.schemas import (
     CommentItem,
     CommentListResponse,
     InteractionSummary,
+    DailyPost,
+    DailyPostCreateRequest,
+    DailyPostListResponse,
+    DailyPostResponse,
+    DailyPostUpdateRequest,
+    DailyTemplate,
+    ImageUploadRequest,
+    ImageUploadResponse,
     LoginRequest,
     MessageSettings,
     NewsItem,
     NewsListResponse,
     NotificationListResponse,
+    PaperCreateRequest,
+    PaperItem,
+    PaperListResponse,
     PasswordResetRequest,
     InteractionState,
     PersonalItem,
@@ -23,8 +41,16 @@ from app.schemas import (
     PersonalStats,
     PrivacySettings,
     RegisterRequest,
+    ReadingProgress,
+    ReadingProgressRequest,
     ResearchStatsResponse,
     SettingsResponse,
+    TopicCategory,
+    TopicCategoryListResponse,
+    TopicCategoryRequest,
+    TopicTag,
+    TopicTagListResponse,
+    TopicTagRequest,
     UserListResponse,
     UserProfile,
     UserUpdateRequest,
@@ -33,6 +59,9 @@ from app.services.news_service import get_categories, get_daily_news, get_news_b
 from app.storage import store
 
 app = FastAPI(title="SciDaily API", version="0.2.0")
+UPLOAD_DIR = Path(__file__).resolve().parent / "data" / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,6 +81,25 @@ def bearer_token_from_request(request: Request) -> str:
 
 def bad_request(error: ValueError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
+
+
+def image_extension(filename: str) -> str:
+    safe_name = re.sub(r"[^a-zA-Z0-9_.-]+", "_", filename.strip())
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in [".jpg", ".jpeg", ".png", ".webp", ".gif"]:
+        raise ValueError("Unsupported image type")
+    return suffix
+
+
+def decode_image_content(content_base64: str) -> bytes:
+    if len(content_base64) > 8_000_000:
+        raise ValueError("Image is too large")
+    if "," in content_base64 and content_base64.split(",", 1)[0].startswith("data:image/"):
+        content_base64 = content_base64.split(",", 1)[1]
+    try:
+        return base64.b64decode(content_base64, validate=True)
+    except ValueError as exc:
+        raise ValueError("Invalid image content") from exc
 
 
 @app.get("/api/v1/health", response_model=ApiMessage)
@@ -106,6 +154,168 @@ def delete_news_comment(comment_id: int, current_user: UserProfile = Depends(get
 @app.get("/api/v1/categories", response_model=CategoryResponse)
 def categories():
     return CategoryResponse(items=get_categories())
+
+
+@app.get("/api/v1/daily-posts", response_model=DailyPostListResponse)
+def list_daily_posts(
+    category_id: Optional[str] = None,
+    tag_id: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+):
+    items, next_offset, has_more = store.list_daily_posts(
+        status_filter="published",
+        category_id=category_id,
+        tag_id=tag_id,
+        limit=limit,
+        offset=offset,
+    )
+    return DailyPostListResponse(items=items, next_offset=next_offset, has_more=has_more)
+
+
+@app.get("/api/v1/daily-posts/templates", response_model=list[DailyTemplate])
+def daily_templates():
+    return store.list_daily_templates()
+
+
+@app.post("/api/v1/uploads/images", response_model=ImageUploadResponse, status_code=status.HTTP_201_CREATED)
+def upload_image(payload: ImageUploadRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        extension = image_extension(payload.filename)
+        image_bytes = decode_image_content(payload.content_base64)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    filename = f"u{current_user.id}-{secrets.token_hex(12)}{extension}"
+    target = UPLOAD_DIR / filename
+    target.write_bytes(image_bytes)
+    return ImageUploadResponse(url=f"/uploads/{filename}")
+
+
+@app.get("/api/v1/daily-posts/{post_id}", response_model=DailyPost)
+def daily_post_detail(post_id: str):
+    try:
+        return store.get_daily_post(post_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/papers", response_model=PaperListResponse)
+def list_papers(
+    category_id: Optional[str] = None,
+    tag_id: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+):
+    items, next_offset, has_more = store.list_papers(
+        category_id=category_id,
+        tag_id=tag_id,
+        limit=limit,
+        offset=offset,
+    )
+    return PaperListResponse(items=items, next_offset=next_offset, has_more=has_more)
+
+
+@app.post("/api/v1/papers", response_model=PaperItem, status_code=status.HTTP_201_CREATED)
+def create_paper(payload: PaperCreateRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.create_paper(payload)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.get("/api/v1/papers/{paper_id}", response_model=PaperItem)
+def paper_detail(paper_id: str):
+    try:
+        return store.get_paper(paper_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/papers/{paper_id}/progress", response_model=ReadingProgress)
+def paper_progress(paper_id: str, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.get_reading_progress(current_user.id, paper_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@app.put("/api/v1/papers/{paper_id}/progress", response_model=ReadingProgress)
+def update_paper_progress(paper_id: str, payload: ReadingProgressRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.update_reading_progress(current_user.id, paper_id, payload)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.get("/api/v1/topics/categories", response_model=TopicCategoryListResponse)
+def topic_categories():
+    return TopicCategoryListResponse(items=store.list_topic_categories())
+
+
+@app.post("/api/v1/topics/categories", response_model=TopicCategory, status_code=status.HTTP_201_CREATED)
+def create_topic_category(payload: TopicCategoryRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.create_topic_category(payload)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.put("/api/v1/topics/categories/{category_id}", response_model=TopicCategory)
+def update_topic_category(category_id: str, payload: TopicCategoryRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.update_topic_category(category_id, payload)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.delete("/api/v1/topics/categories/{category_id}", response_model=ApiMessage)
+def delete_topic_category(category_id: str, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        store.delete_topic_category(category_id)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    return ApiMessage(message="Category deleted")
+
+
+@app.get("/api/v1/topics/tags", response_model=TopicTagListResponse)
+def topic_tags(category_id: Optional[str] = None):
+    return TopicTagListResponse(items=store.list_topic_tags(category_id))
+
+
+@app.post("/api/v1/topics/tags", response_model=TopicTag, status_code=status.HTTP_201_CREATED)
+def create_topic_tag(payload: TopicTagRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.create_topic_tag(payload)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.put("/api/v1/topics/tags/{tag_id}", response_model=TopicTag)
+def update_topic_tag(tag_id: str, payload: TopicTagRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.update_topic_tag(tag_id, payload)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.delete("/api/v1/topics/tags/{tag_id}", response_model=ApiMessage)
+def delete_topic_tag(tag_id: str, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        store.delete_topic_tag(tag_id)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    return ApiMessage(message="Tag deleted")
+
+
+@app.get("/api/v1/topics/tags/{tag_id}/posts", response_model=DailyPostListResponse)
+def topic_tag_posts(tag_id: str, limit: int = 20, offset: int = 0):
+    items, next_offset, has_more = store.list_daily_posts(
+        status_filter="published",
+        tag_id=tag_id,
+        limit=limit,
+        offset=offset,
+    )
+    return DailyPostListResponse(items=items, next_offset=next_offset, has_more=has_more)
 
 
 @app.post("/api/v1/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
@@ -191,6 +401,50 @@ def my_research_stats(range: str = "week", current_user: UserProfile = Depends(g
 @app.get("/api/v1/users/me/posts", response_model=PersonalListResponse)
 def my_posts(current_user: UserProfile = Depends(get_current_user)):
     return PersonalListResponse(items=store.get_personal_items("posts", current_user.id))
+
+
+@app.get("/api/v1/users/me/daily-posts", response_model=DailyPostListResponse)
+def my_daily_posts(status_filter: str = "all", limit: int = 50, offset: int = 0, current_user: UserProfile = Depends(get_current_user)):
+    items, next_offset, has_more = store.list_daily_posts(
+        status_filter=status_filter,
+        limit=limit,
+        offset=offset,
+        author_id=current_user.id,
+    )
+    return DailyPostListResponse(items=items, next_offset=next_offset, has_more=has_more)
+
+
+@app.post("/api/v1/users/me/daily-posts", response_model=DailyPostResponse, status_code=status.HTTP_201_CREATED)
+def create_my_daily_post(payload: DailyPostCreateRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return DailyPostResponse(item=store.create_daily_post(current_user.id, payload))
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.put("/api/v1/users/me/daily-posts/{post_id}", response_model=DailyPostResponse)
+def update_my_daily_post(post_id: str, payload: DailyPostUpdateRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return DailyPostResponse(item=store.update_daily_post(current_user.id, post_id, payload))
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.post("/api/v1/users/me/daily-posts/{post_id}/publish", response_model=DailyPostResponse)
+def publish_my_daily_post(post_id: str, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return DailyPostResponse(item=store.publish_daily_post(current_user.id, post_id))
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.delete("/api/v1/users/me/daily-posts/{post_id}", response_model=ApiMessage)
+def delete_my_daily_post(post_id: str, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        store.delete_daily_post(current_user.id, post_id)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    return ApiMessage(message="Daily post deleted")
 
 
 @app.get("/api/v1/users/me/collections", response_model=PersonalListResponse)
