@@ -12,6 +12,26 @@ import { paperService } from '../services/PaperService';
 import { personalCenterService } from '../services/PersonalCenterService';
 import { AppColor, Space, Radius, Font, Elevation } from '../theme/AppTheme';
 
+interface CollegeInfo {
+  id: string;
+  name: string;
+  city: string;
+  tagLine: string;
+  activeCount: number;
+  followerText: string;
+}
+
+interface CollegeNewsItem {
+  id: string;
+  collegeId: string;
+  title: string;
+  summary: string;
+  source: string;
+  time: string;
+  topic: string;
+  heat: number;
+}
+
 @Entry
 @Component
 struct Index {
@@ -22,6 +42,8 @@ struct Index {
   @State tags: TopicTag[] = [];
   @State templates: DailyTemplate[] = [];
   @State myPosts: DailyPost[] = [];
+  @State homeChannel: string = 'discover';
+  @State selectedCollegeId: string = 'tsinghua';
   @State selectedCategoryId: string = 'all';
   @State selectedTagId: string = '';
   @State loading: boolean = true;
@@ -59,8 +81,102 @@ struct Index {
   @State aiAnswer: string = '';
   @State currentTab: number = 0;
   @State likedPostIds: string[] = [];
-  private tabsController: TabsController = new TabsController();
-
+  @State colleges: CollegeInfo[] = [
+    {
+      id: 'tsinghua',
+      name: '清华大学',
+      city: '北京',
+      tagLine: 'AI、材料与交叉学科动态密集更新',
+      activeCount: 128,
+      followerText: '3.8 万同学关注'
+    },
+    {
+      id: 'pku',
+      name: '北京大学',
+      city: '北京',
+      tagLine: '生命科学、医学与基础研究资讯',
+      activeCount: 96,
+      followerText: '3.1 万同学关注'
+    },
+    {
+      id: 'sjtu',
+      name: '上海交通大学',
+      city: '上海',
+      tagLine: '工程、医工交叉与创新项目集合',
+      activeCount: 84,
+      followerText: '2.6 万同学关注'
+    },
+    {
+      id: 'zju',
+      name: '浙江大学',
+      city: '杭州',
+      tagLine: '机器人、农业科学与数据智能前沿',
+      activeCount: 72,
+      followerText: '2.2 万同学关注'
+    }
+  ];
+  @State collegeNewsItems: CollegeNewsItem[] = [
+    {
+      id: 'tsinghua-1',
+      collegeId: 'tsinghua',
+      title: '交叉信息院团队开源多模态科研助手评测集',
+      summary: '覆盖论文检索、实验设计和结果复核等场景，适合做组会分享与课程项目基线。',
+      source: '清华科研快讯',
+      time: '今天 09:20',
+      topic: '人工智能',
+      heat: 86
+    },
+    {
+      id: 'tsinghua-2',
+      collegeId: 'tsinghua',
+      title: '材料学院发布柔性传感器最新进展',
+      summary: '新结构提升了低温环境下的稳定性，相关论文已开放预印本。',
+      source: '材料学院',
+      time: '昨天 18:40',
+      topic: '材料科学',
+      heat: 62
+    },
+    {
+      id: 'pku-1',
+      collegeId: 'pku',
+      title: '生命科学学院举办单细胞组学方法训练营',
+      summary: '课程覆盖数据质控、聚类注释和疾病队列分析，面向研究生开放报名。',
+      source: '北大生科',
+      time: '今天 10:05',
+      topic: '生命科学',
+      heat: 78
+    },
+    {
+      id: 'pku-2',
+      collegeId: 'pku',
+      title: '医学部临床 AI 读书会更新本周论文清单',
+      summary: '重点讨论真实世界数据中的偏倚校正与模型外部验证。',
+      source: '医学部研会',
+      time: '昨天 16:10',
+      topic: '医学 AI',
+      heat: 55
+    },
+    {
+      id: 'sjtu-1',
+      collegeId: 'sjtu',
+      title: '电院智能机器人方向开放联合课题报名',
+      summary: '项目聚焦具身智能、工业巡检和低成本机械臂控制，支持跨院系组队。',
+      source: '交大电院',
+      time: '今天 08:30',
+      topic: '机器人',
+      heat: 74
+    },
+    {
+      id: 'zju-1',
+      collegeId: 'zju',
+      title: '计算机学院发布农业智能感知挑战赛赛题',
+      summary: '赛题包含田间图像分割、病虫害识别和时序预测三个方向。',
+      source: '浙大 CS',
+      time: '今天 11:25',
+      topic: '数据智能',
+      heat: 69
+    }
+  ];
   aboutToAppear(): void {
     this.bootstrap();
   }
@@ -294,6 +410,13 @@ struct Index {
     });
   }
 
+  private selectMainTab(index: number): void {
+    this.currentTab = index;
+    if (index === 3) {
+      this.reloadNotifications();
+    }
+  }
+
   private requireLogin(): boolean {
     if (authService.isLoggedIn()) {
       return true;
@@ -386,7 +509,7 @@ struct Index {
     this.editorImages = post.imageUrls;
     this.editorCategoryId = post.categoryId;
     this.editorTagIds = post.tagIds;
-    this.tabsController.changeIndex(2);
+    this.selectMainTab(2);
   }
 
   private deletePost(postId: string): void {
@@ -535,6 +658,15 @@ struct Index {
     return values[index % values.length];
   }
 
+  private selectedCollege(): CollegeInfo {
+    const college = this.colleges.find((item: CollegeInfo) => item.id === this.selectedCollegeId);
+    return college === undefined ? this.colleges[0] : college;
+  }
+
+  private currentCollegeNews(): CollegeNewsItem[] {
+    return this.collegeNewsItems.filter((item: CollegeNewsItem) => item.collegeId === this.selectedCollegeId);
+  }
+
   private isFeedLiked(postId: string): boolean {
     return this.likedPostIds.includes(postId);
   }
@@ -574,21 +706,23 @@ struct Index {
   }
 
   @Builder
-  private topChannel(title: string, active: boolean, action: () => void): void {
+  private topChannel(title: string, channel: string): void {
     Column({ space: Space.xs }) {
       Text(title)
         .fontSize(22)
-        .fontWeight(active ? FontWeight.Bold : FontWeight.Normal)
-        .fontColor(active ? AppColor.textTitle : AppColor.textMuted);
+        .fontWeight(this.homeChannel === channel ? FontWeight.Bold : FontWeight.Normal)
+        .fontColor(this.homeChannel === channel ? AppColor.textTitle : AppColor.textMuted);
       Column()
-        .width(active ? 36 : 0)
+        .width(36)
         .height(4)
-        .backgroundColor(AppColor.accent)
+        .backgroundColor(this.homeChannel === channel ? AppColor.accent : '#00FFFFFF')
         .borderRadius(2);
     }
     .height(56)
     .justifyContent(FlexAlign.Center)
-    .onClick(action);
+    .onClick(() => {
+      this.homeChannel = channel;
+    });
   }
 
   @Builder
@@ -612,13 +746,9 @@ struct Index {
         .textAlign(TextAlign.Center);
 
       Row({ space: 34 }) {
-        this.topChannel('关注', false, () => {
-        });
-        this.topChannel('发现', true, () => {
-        });
-        this.topChannel('高校', false, () => {
-          router.pushUrl({ url: 'pages/CollegeCircle' });
-        });
+        this.topChannel('关注', 'follow');
+        this.topChannel('发现', 'discover');
+        this.topChannel('高校', 'college');
       }
       .layoutWeight(1)
       .justifyContent(FlexAlign.Center);
@@ -759,7 +889,11 @@ struct Index {
           .borderRadius(12);
       }
       .height(58)
-      .justifyContent(FlexAlign.Center);
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => {
+        this.selectMainTab(index);
+      });
     } else {
       Column({ space: Space.xs }) {
         Row({ space: Space.xs }) {
@@ -784,7 +918,11 @@ struct Index {
           .borderRadius(2);
       }
       .height(58)
-      .justifyContent(FlexAlign.Center);
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => {
+        this.selectMainTab(index);
+      });
     }
   }
 
@@ -980,13 +1118,226 @@ struct Index {
   }
 
   @Builder
+  private collegeChip(college: CollegeInfo): void {
+    Column({ space: 2 }) {
+      Text(college.name)
+        .fontSize(Font.body)
+        .fontWeight(this.selectedCollegeId === college.id ? FontWeight.Bold : FontWeight.Medium)
+        .fontColor(this.selectedCollegeId === college.id ? AppColor.textOnPrimary : AppColor.textBody)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis });
+      Text(college.city)
+        .fontSize(Font.caption)
+        .fontColor(this.selectedCollegeId === college.id ? AppColor.onHeroSoft : AppColor.textMuted);
+    }
+    .width(116)
+    .height(56)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.selectedCollegeId === college.id ? AppColor.primary : AppColor.surface)
+    .border({ width: 1, color: this.selectedCollegeId === college.id ? AppColor.primary : AppColor.border })
+    .borderRadius(Radius.lg)
+    .onClick(() => {
+      this.selectedCollegeId = college.id;
+    });
+  }
+
+  @Builder
+  private collegeSummaryCard(college: CollegeInfo): void {
+    Column({ space: Space.md }) {
+      Row() {
+        Column({ space: Space.xs }) {
+          Text(college.name)
+            .fontSize(Font.h2)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis });
+          Text(college.tagLine)
+            .fontSize(Font.body)
+            .fontColor(AppColor.textSecondary)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .lineHeight(20);
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start);
+        Text('关注')
+          .fontSize(Font.small)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(AppColor.accentStrong)
+          .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+          .backgroundColor(AppColor.accentSoft)
+          .borderRadius(Radius.pill);
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top);
+
+      Row() {
+        Column({ space: 2 }) {
+          Text(college.activeCount.toString())
+            .fontSize(Font.sub)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle);
+          Text('活跃资讯')
+            .fontSize(Font.caption)
+            .fontColor(AppColor.textMuted);
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Center);
+        Column({ space: 2 }) {
+          Text(college.followerText)
+            .fontSize(Font.sub)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle);
+          Text('关注热度')
+            .fontSize(Font.caption)
+            .fontColor(AppColor.textMuted);
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Center);
+        Column({ space: 2 }) {
+          Text(this.currentCollegeNews().length.toString())
+            .fontSize(Font.sub)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle);
+          Text('今日更新')
+            .fontSize(Font.caption)
+            .fontColor(AppColor.textMuted);
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Center);
+      }
+      .width('100%')
+      .padding({ top: Space.md, bottom: Space.md })
+      .backgroundColor(AppColor.surfaceSoft)
+      .borderRadius(Radius.md);
+    }
+    .width('100%')
+    .padding(Space.lg)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: AppColor.border })
+    .shadow(Elevation.card);
+  }
+
+  @Builder
+  private collegeNewsCard(item: CollegeNewsItem): void {
+    Column({ space: Space.sm }) {
+      Row({ space: Space.sm }) {
+        Text(item.topic)
+          .fontSize(Font.caption)
+          .fontColor(AppColor.accentStrong)
+          .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
+          .backgroundColor(AppColor.accentSoft)
+          .borderRadius(Radius.sm);
+        Text(item.source)
+          .fontSize(Font.caption)
+          .fontColor(AppColor.textMuted)
+          .layoutWeight(1);
+        Text(item.time)
+          .fontSize(Font.caption)
+          .fontColor(AppColor.textMuted);
+      }
+      .width('100%');
+
+      Text(item.title)
+        .fontSize(Font.sub)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(AppColor.textTitle)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%');
+
+      Text(item.summary)
+        .fontSize(Font.body)
+        .fontColor(AppColor.textSecondary)
+        .lineHeight(20)
+        .maxLines(3)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%');
+
+      Text(`${item.heat} 热度`)
+        .fontSize(Font.small)
+        .fontColor(AppColor.warning)
+        .width('100%');
+    }
+    .width('100%')
+    .padding(Space.lg)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: AppColor.border });
+  }
+
+  @Builder
+  private collegeFeedContent(): void {
+    Column({ space: Space.md }) {
+      Scroll() {
+        Row({ space: Space.sm }) {
+          ForEach(this.colleges, (college: CollegeInfo) => {
+            this.collegeChip(college);
+          }, (college: CollegeInfo) => college.id);
+        }
+      }
+      .width('100%')
+      .height(62)
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off);
+
+      this.collegeSummaryCard(this.selectedCollege());
+
+      Row() {
+        Text('校园资讯')
+          .fontSize(Font.title)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.textTitle);
+        Blank();
+        Text('按学校更新')
+          .fontSize(Font.small)
+          .fontColor(AppColor.textMuted);
+      }
+      .width('100%');
+
+      ForEach(this.currentCollegeNews(), (item: CollegeNewsItem) => {
+        this.collegeNewsCard(item);
+      }, (item: CollegeNewsItem) => item.id);
+    }
+    .width('100%');
+  }
+
+  @Builder
+  private followFeedContent(): void {
+    Column({ space: Space.md }) {
+      Text('关注动态')
+        .fontSize(Font.title)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(AppColor.textTitle);
+      Text('你关注的研究者和高校动态会显示在这里。')
+        .fontSize(Font.body)
+        .fontColor(AppColor.textSecondary)
+        .lineHeight(20)
+        .textAlign(TextAlign.Center);
+    }
+    .width('100%')
+    .height(260)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center);
+  }
+
+  @Builder
   private feedTab(): void {
     Column() {
       this.discoveryHeader();
-      this.discoveryFilterBar();
+      if (this.homeChannel === 'discover') {
+        this.discoveryFilterBar();
+      }
       Scroll() {
         Column({ space: Space.md }) {
-          if (this.loading) {
+          if (this.homeChannel === 'college') {
+            this.collegeFeedContent();
+          } else if (this.homeChannel === 'follow') {
+            this.followFeedContent();
+          } else if (this.loading) {
             Row({ space: Space.sm }) {
               Column({ space: Space.sm }) {
                 this.skeletonCard(150);
@@ -1129,75 +1480,82 @@ struct Index {
 
   @Builder
   private editorTab(): void {
-    Scroll() {
-      Column({ space: Space.lg }) {
-        Text('创作')
-          .fontSize(Font.h1)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(AppColor.textTitle)
-          .width('100%');
-
-        this.createActionCard(
-          '发布科研日报',
-          '进入独立发布页，像发布笔记一样添加图片、标题、正文、话题和可见性。',
-          '开始创作',
-          'pages/CreatePost'
-        );
-
-        Button('文献 PDF 库')
-          .height(44)
-          .width('100%')
-          .fontColor(AppColor.accentStrong)
-          .backgroundColor(AppColor.accentSoft)
-          .borderRadius(Radius.lg)
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/PaperLibrary' });
-          });
-
-        if (this.myPosts.length > 0) {
-          Text('我的日报')
-            .fontSize(Font.title)
+    Column() {
+      Scroll() {
+        Column({ space: Space.lg }) {
+          Text('创作')
+            .fontSize(Font.h1)
             .fontWeight(FontWeight.Bold)
             .fontColor(AppColor.textTitle)
             .width('100%');
-          ForEach(this.myPosts, (post: DailyPost) => {
-            Row({ space: Space.md }) {
-              Column({ space: Space.xs }) {
-                Text(post.title)
-                  .fontSize(Font.body)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor(AppColor.textTitle)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .width('100%');
-                Text(post.status === 'published' ? '已发布' : '草稿')
-                  .fontSize(Font.small)
-                  .fontColor(post.status === 'published' ? AppColor.accent : AppColor.textMuted);
-              }
-              .layoutWeight(1);
-              Button('删除')
-                .height(32)
-                .fontSize(Font.small)
-                .fontColor(AppColor.danger)
-                .backgroundColor(AppColor.dangerSoft)
-                .borderRadius(Radius.md)
-                .onClick(() => {
-                  this.deletePost(post.id);
-                });
-            }
+
+          this.createActionCard(
+            '发布科研日报',
+            '进入独立发布页，像发布笔记一样添加图片、标题、正文、话题和可见性。',
+            '开始创作',
+            'pages/CreatePost'
+          );
+
+          Button('文献 PDF 库')
+            .height(44)
             .width('100%')
-            .padding(Space.md)
-            .backgroundColor(AppColor.surface)
+            .fontColor(AppColor.accentStrong)
+            .backgroundColor(AppColor.accentSoft)
             .borderRadius(Radius.lg)
-            .border({ width: 1, color: AppColor.border });
-          }, (post: DailyPost) => post.id);
+            .onClick(() => {
+              router.pushUrl({ url: 'pages/PaperLibrary' });
+            });
+
+          if (this.myPosts.length > 0) {
+            Text('我的日报')
+              .fontSize(Font.title)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(AppColor.textTitle)
+              .width('100%');
+            ForEach(this.myPosts, (post: DailyPost) => {
+              Row({ space: Space.md }) {
+                Column({ space: Space.xs }) {
+                  Text(post.title)
+                    .fontSize(Font.body)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(AppColor.textTitle)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .width('100%');
+                  Text(post.status === 'published' ? '已发布' : '草稿')
+                    .fontSize(Font.small)
+                    .fontColor(post.status === 'published' ? AppColor.accent : AppColor.textMuted);
+                }
+                .layoutWeight(1);
+                Button('删除')
+                  .height(32)
+                  .fontSize(Font.small)
+                  .fontColor(AppColor.danger)
+                  .backgroundColor(AppColor.dangerSoft)
+                  .borderRadius(Radius.md)
+                  .onClick(() => {
+                    this.deletePost(post.id);
+                  });
+              }
+              .width('100%')
+              .padding(Space.md)
+              .backgroundColor(AppColor.surface)
+              .borderRadius(Radius.lg)
+              .border({ width: 1, color: AppColor.border });
+            }, (post: DailyPost) => post.id);
+          }
         }
+        .width('100%')
+        .padding({ left: Space.md, right: Space.md, top: Space.lg, bottom: Space.xxl });
       }
-      .width('100%')
-      .padding({ left: Space.md, right: Space.md, top: Space.lg, bottom: Space.xxl });
+      .height('100%')
+      .scrollBar(BarState.Off)
+      .backgroundColor(AppColor.bg);
     }
     .width('100%')
     .height('100%')
+    .justifyContent(FlexAlign.Start)
+    .alignItems(HorizontalAlign.Start)
     .backgroundColor(AppColor.bg);
   }
 
@@ -1275,117 +1633,123 @@ struct Index {
 
   @Builder
   private aiTab(): void {
-    Scroll() {
-      Column({ space: Space.lg }) {
-        Column({ space: Space.xs }) {
-          Text('AI')
-            .fontSize(Font.h1)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(AppColor.textTitle)
-            .width('100%');
-          Text('把科研想法整理成下一步行动')
-            .fontSize(Font.small)
-            .fontColor(AppColor.textSecondary)
-            .width('100%');
-        }
-        .width('100%');
-
-        Column({ space: Space.md }) {
-          Row({ space: Space.sm }) {
-            this.aiModeChip('paper', '文献速读');
-            this.aiModeChip('topic', '选题建议');
-            this.aiModeChip('experiment', '实验设计');
+    Column() {
+      Scroll() {
+        Column({ space: Space.lg }) {
+          Column({ space: Space.xs }) {
+            Text('AI')
+              .fontSize(Font.h1)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(AppColor.textTitle)
+              .width('100%');
+            Text('把科研想法整理成下一步行动')
+              .fontSize(Font.small)
+              .fontColor(AppColor.textSecondary)
+              .width('100%');
           }
           .width('100%');
 
-          Text(this.aiModeDescription())
-            .fontSize(Font.small)
-            .fontColor(AppColor.textSecondary)
-            .width('100%');
-
-          TextArea({ placeholder: '输入论文标题、研究想法或实验目标', text: this.aiPrompt })
-            .height(142)
-            .fontSize(Font.body)
-            .fontColor(AppColor.textBody)
-            .placeholderColor(AppColor.textMuted)
-            .lineHeight(22)
-            .backgroundColor(AppColor.surfaceSoft)
-            .border({ width: 1, color: AppColor.border })
-            .borderRadius(Radius.lg)
-            .padding(Space.md)
-            .onChange((value: string) => {
-              this.aiPrompt = value;
-            });
-
-          Button(`生成${this.aiModeName(this.aiMode)}建议`)
-            .height(44)
-            .width('100%')
-            .fontColor(AppColor.textOnPrimary)
-            .fontWeight(FontWeight.Medium)
-            .backgroundColor(AppColor.primary)
-            .borderRadius(Radius.lg)
-            .onClick(() => {
-              this.generateAiAnswer();
-            });
-        }
-        .width('100%')
-        .padding(Space.lg)
-        .backgroundColor(AppColor.surface)
-        .borderRadius(Radius.lg)
-        .border({ width: 1, color: AppColor.border })
-        .shadow(Elevation.card);
-
-        Column({ space: Space.sm }) {
-          Text('常用入口')
-            .fontSize(Font.title)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(AppColor.textTitle)
-            .width('100%');
-          Flex({ wrap: FlexWrap.Wrap }) {
-            this.aiPromptPreset('帮我梳理这篇论文的创新点和可复现实验');
-            this.aiPromptPreset('把单细胞免疫图谱方向整理成一个开题问题');
-            this.aiPromptPreset('为 Retrieval-Augmented Generation 设计一组对照实验');
-          }
-          .width('100%');
-        }
-        .width('100%');
-
-        if (this.aiAnswer.length > 0) {
           Column({ space: Space.md }) {
-            Row() {
-              Text(`${this.aiModeName(this.aiMode)}建议`)
-                .fontSize(Font.title)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(AppColor.textTitle);
-              Blank();
-              Text('本地草稿')
-                .fontSize(Font.caption)
-                .fontColor(AppColor.accentStrong)
-                .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
-                .backgroundColor(AppColor.accentSoft)
-                .borderRadius(Radius.sm);
+            Row({ space: Space.sm }) {
+              this.aiModeChip('paper', '文献速读');
+              this.aiModeChip('topic', '选题建议');
+              this.aiModeChip('experiment', '实验设计');
             }
             .width('100%');
 
-            Text(this.aiAnswer)
+            Text(this.aiModeDescription())
+              .fontSize(Font.small)
+              .fontColor(AppColor.textSecondary)
+              .width('100%');
+
+            TextArea({ placeholder: '输入论文标题、研究想法或实验目标', text: this.aiPrompt })
+              .height(142)
               .fontSize(Font.body)
               .fontColor(AppColor.textBody)
-              .lineHeight(24)
-              .width('100%');
+              .placeholderColor(AppColor.textMuted)
+              .lineHeight(22)
+              .backgroundColor(AppColor.surfaceSoft)
+              .border({ width: 1, color: AppColor.border })
+              .borderRadius(Radius.lg)
+              .padding(Space.md)
+              .onChange((value: string) => {
+                this.aiPrompt = value;
+              });
+
+            Button(`生成${this.aiModeName(this.aiMode)}建议`)
+              .height(44)
+              .width('100%')
+              .fontColor(AppColor.textOnPrimary)
+              .fontWeight(FontWeight.Medium)
+              .backgroundColor(AppColor.primary)
+              .borderRadius(Radius.lg)
+              .onClick(() => {
+                this.generateAiAnswer();
+              });
           }
           .width('100%')
           .padding(Space.lg)
           .backgroundColor(AppColor.surface)
           .borderRadius(Radius.lg)
-          .border({ width: 1, color: AppColor.border });
+          .border({ width: 1, color: AppColor.border })
+          .shadow(Elevation.card);
+
+          Column({ space: Space.sm }) {
+            Text('常用入口')
+              .fontSize(Font.title)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(AppColor.textTitle)
+              .width('100%');
+            Flex({ wrap: FlexWrap.Wrap }) {
+              this.aiPromptPreset('帮我梳理这篇论文的创新点和可复现实验');
+              this.aiPromptPreset('把单细胞免疫图谱方向整理成一个开题问题');
+              this.aiPromptPreset('为 Retrieval-Augmented Generation 设计一组对照实验');
+            }
+            .width('100%');
+          }
+          .width('100%');
+
+          if (this.aiAnswer.length > 0) {
+            Column({ space: Space.md }) {
+              Row() {
+                Text(`${this.aiModeName(this.aiMode)}建议`)
+                  .fontSize(Font.title)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(AppColor.textTitle);
+                Blank();
+                Text('本地草稿')
+                  .fontSize(Font.caption)
+                  .fontColor(AppColor.accentStrong)
+                  .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
+                  .backgroundColor(AppColor.accentSoft)
+                  .borderRadius(Radius.sm);
+              }
+              .width('100%');
+
+              Text(this.aiAnswer)
+                .fontSize(Font.body)
+                .fontColor(AppColor.textBody)
+                .lineHeight(24)
+                .width('100%');
+            }
+            .width('100%')
+            .padding(Space.lg)
+            .backgroundColor(AppColor.surface)
+            .borderRadius(Radius.lg)
+            .border({ width: 1, color: AppColor.border });
+          }
         }
+        .width('100%')
+        .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.xxl });
       }
-      .width('100%')
-      .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.xxl });
+      .height('100%')
+      .scrollBar(BarState.Off)
+      .backgroundColor(AppColor.bg);
     }
     .width('100%')
     .height('100%')
-    .scrollBar(BarState.Off)
+    .justifyContent(FlexAlign.Start)
+    .alignItems(HorizontalAlign.Start)
     .backgroundColor(AppColor.bg);
   }
 
@@ -1770,45 +2134,45 @@ struct Index {
   }
 
   build() {
-    Tabs({
-      barPosition: BarPosition.End,
-      controller: this.tabsController
-    }) {
-      TabContent() {
-        this.feedTab();
+    Column() {
+      Column() {
+        if (this.currentTab === 0) {
+          this.feedTab();
+        } else if (this.currentTab === 1) {
+          this.aiTab();
+        } else if (this.currentTab === 2) {
+          this.editorTab();
+        } else if (this.currentTab === 3) {
+          this.messagesTab();
+        } else {
+          this.profileTab();
+        }
       }
-      .tabBar(this.tabBarItem('首页', 0));
+      .width('100%')
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Start)
+      .alignItems(HorizontalAlign.Start)
+      .clip(true);
 
-      TabContent() {
-        this.aiTab();
-      }
-      .tabBar(this.tabBarItem('AI', 1));
+      Divider()
+        .color(AppColor.border)
+        .height(1);
 
-      TabContent() {
-        this.editorTab();
+      Row() {
+        this.tabBarItem('首页', 0);
+        this.tabBarItem('AI', 1);
+        this.tabBarItem('创作', 2);
+        this.tabBarItem('消息', 3);
+        this.tabBarItem('我的', 4);
       }
-      .tabBar(this.tabBarItem('创作', 2));
-
-      TabContent() {
-        this.messagesTab();
-      }
-      .tabBar(this.tabBarItem('消息', 3));
-
-      TabContent() {
-        this.profileTab();
-      }
-      .tabBar(this.tabBarItem('我的', 4));
+      .width('100%')
+      .height(68)
+      .padding({ left: Space.xs, right: Space.xs })
+      .backgroundColor(AppColor.surface)
+      .alignItems(VerticalAlign.Center);
     }
     .width('100%')
     .height('100%')
-    .scrollable(false)
-    .barBackgroundColor(AppColor.surface)
-    .divider({ strokeWidth: 1, color: AppColor.border })
-    .onChange((index: number) => {
-      this.currentTab = index;
-      if (index === 3) {
-        this.reloadNotifications();
-      }
-    });
+    .backgroundColor(AppColor.bg);
   }
 }
