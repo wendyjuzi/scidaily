@@ -537,9 +537,17 @@ class AppStore:
         elif table_key == "collections":
             self._add_notification(
                 user_id=user_id,
-                notice_type="system",
+                notice_type="collection",
                 title="收藏已同步",
                 content=f"《{title}》已加入你的收藏列表。",
+                related_item_id=item_id,
+            )
+        elif table_key == "follows":
+            self._add_notification(
+                user_id=user_id,
+                notice_type="follow",
+                title="关注成功",
+                content=f"你关注了 {title}。",
                 related_item_id=item_id,
             )
         return PersonalItem(
@@ -2068,7 +2076,7 @@ class AppStore:
         row = self.conn.execute("SELECT * FROM user_settings WHERE user_id = ?", (user_id,)).fetchone()
         if row is None:
             return True
-        if notice_type == "like":
+        if notice_type in ("like", "collection", "follow"):
             return bool(row["like_notice"])
         if notice_type == "comment":
             return bool(row["comment_notice"])

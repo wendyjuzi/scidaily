@@ -77,6 +77,42 @@ class CommunityService {
   private localNotifications: NotificationItem[] = [
     {
       id: 1,
+      type: 'like',
+      title: '赞和收藏',
+      content: '导师点赞了你的《多模态科研智能体复现记录》。',
+      relatedItemId: 'local-daily-001',
+      isRead: false,
+      createdAt: '2026-06-05'
+    },
+    {
+      id: 2,
+      type: 'collection',
+      title: '收藏提醒',
+      content: '师兄收藏了你的《单细胞免疫图谱文献阅读》。',
+      relatedItemId: 'local-daily-002',
+      isRead: false,
+      createdAt: '2026-06-05'
+    },
+    {
+      id: 3,
+      type: 'follow',
+      title: '新增关注',
+      content: '中南大学材料学院同学关注了你。',
+      relatedItemId: 'author-1',
+      isRead: false,
+      createdAt: '2026-06-05'
+    },
+    {
+      id: 4,
+      type: 'comment',
+      title: '收到评论回复',
+      content: '师兄回复了你：复现实验脚本我放到共享目录了。',
+      relatedItemId: 'local-daily-001',
+      isRead: false,
+      createdAt: '2026-06-05'
+    },
+    {
+      id: 5,
       type: 'system',
       title: '欢迎使用科研日报社区',
       content: '评论、科研统计看板和消息通知已进入演示模式。',
@@ -86,7 +122,7 @@ class CommunityService {
     }
   ];
   private nextCommentId: number = 100;
-  private nextNotificationId: number = 2;
+  private nextNotificationId: number = 6;
 
   async getInteractionSummary(newsId: string): Promise<InteractionSummary> {
     try {
@@ -104,26 +140,33 @@ class CommunityService {
     }
   }
 
-  async getComments(newsId: string, sort: string = 'latest'): Promise<CommentItem[]> {
+  async getComments(newsId: string, sort: string = 'latest', page: number = 1, size: number = 20): Promise<CommentItem[]> {
     try {
       const response = await httpClient.request({
-        path: `/news/${newsId}/comments?page=1&size=50&sort=${sort}`,
+        path: `/news/${newsId}/comments?page=${page}&size=${size}&sort=${sort}`,
         method: http.RequestMethod.GET
       });
       const dto = JSON.parse(response) as CommentListDto;
       const items = this.fromCommentListDto(dto);
-      this.localComments.set(newsId, items);
+      if (page === 1) {
+        this.localComments.set(newsId, items);
+      }
       return items;
     } catch (error) {
       const items = this.getLocalComments(newsId);
+      const offset = (page - 1) * size;
       if (sort === 'hot') {
-        return items.slice().sort((a: CommentItem, b: CommentItem) => b.likeCount - a.likeCount);
+        return items.slice().sort((a: CommentItem, b: CommentItem) => b.likeCount - a.likeCount).slice(offset, offset + size);
       }
-      return items;
+      return items.slice(offset, offset + size);
     }
   }
 
   async addComment(news: ResearchNews, content: string, parentId?: number): Promise<CommentItem> {
+    return this.addCommentById(news.id, content, parentId);
+  }
+
+  async addCommentById(newsId: string, content: string, parentId?: number): Promise<CommentItem> {
     this.ensureLoggedIn();
     const text = content.trim();
     if (text.length === 0) {
@@ -138,13 +181,13 @@ class CommunityService {
         payload.parent_id = parentId;
       }
       const response = await httpClient.request({
-        path: `/news/${news.id}/comments`,
+        path: `/news/${newsId}/comments`,
         method: http.RequestMethod.POST,
         body: JSON.stringify(payload),
         token: authService.getToken()
       });
       const item = this.fromCommentDto(JSON.parse(response) as CommentDto);
-      this.upsertLocalComment(news.id, item);
+      this.upsertLocalComment(newsId, item);
       return item;
     } catch (error) {
       if (!(error instanceof AppException) || error.code !== AppErrorCode.Network) {
@@ -153,10 +196,10 @@ class CommunityService {
         }
       }
       const currentUser = authService.getCurrentUser();
-      const replyTo = parentId !== undefined ? this.getLocalComments(news.id).find((item: CommentItem) => item.id === parentId) : undefined;
+      const replyTo = parentId !== undefined ? this.getLocalComments(newsId).find((item: CommentItem) => item.id === parentId) : undefined;
       const item: CommentItem = {
         id: this.nextCommentId,
-        newsId: news.id,
+        newsId,
         userId: currentUser ? currentUser.id : 0,
         nickname: currentUser ? currentUser.nickname : '本地用户',
         content: text,
@@ -166,8 +209,8 @@ class CommunityService {
         createdAt: this.todayText()
       };
       this.nextCommentId += 1;
-      this.upsertLocalComment(news.id, item);
-      this.addLocalNotification(parentId === undefined ? '评论已发布' : '回复已发布', text, 'comment', news.id);
+      this.upsertLocalComment(newsId, item);
+      this.addLocalNotification(parentId === undefined ? '评论已发布' : '回复已发布', text, 'comment', newsId);
       return item;
     }
   }

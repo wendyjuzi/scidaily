@@ -32,6 +32,17 @@ interface CollegeNewsItem {
   heat: number;
 }
 
+interface MessageConversation {
+  id: string;
+  kind: string;
+  title: string;
+  preview: string;
+  time: string;
+  unreadCount: number;
+  avatarText: string;
+  avatarColor: string;
+}
+
 @Entry
 @Component
 struct Index {
@@ -76,6 +87,69 @@ struct Index {
   @State unreadCount: number = 0;
   @State messageItems: NotificationItem[] = [];
   @State messageError: string = '';
+  @State messageMode: string = 'chat';
+  @State messageConversations: MessageConversation[] = [
+    {
+      id: 'crt-lab',
+      kind: 'group',
+      title: 'CRT 课题组',
+      preview: '导师：本周组会请大家同步实验进展和论文阅读',
+      time: '20:44',
+      unreadCount: 2,
+      avatarText: 'CR',
+      avatarColor: '#334155'
+    },
+    {
+      id: 'neurips-2026',
+      kind: 'group',
+      title: 'NeurIPS 2026 投稿交流群',
+      preview: '群公告：今晚整理 rebuttal 时间线和 checklist',
+      time: '20:43',
+      unreadCount: 0,
+      avatarText: 'N',
+      avatarColor: '#0D9488'
+    },
+    {
+      id: 'agent-group',
+      kind: 'group',
+      title: 'AI 智能体交流群',
+      preview: '同学A：多智能体协作那篇代码已经跑通了',
+      time: '20:20',
+      unreadCount: 5,
+      avatarText: 'AI',
+      avatarColor: '#D97706'
+    },
+    {
+      id: 'baoyan-2026',
+      kind: 'group',
+      title: '2026 保研交流群',
+      preview: '群公告：中南大学夏令营材料模板已更新',
+      time: '20:08',
+      unreadCount: 1,
+      avatarText: '保',
+      avatarColor: '#2563EB'
+    },
+    {
+      id: 'advisor',
+      kind: 'friend',
+      title: '导师',
+      preview: '明天上午把实验对比表发我看一下',
+      time: '18:49',
+      unreadCount: 0,
+      avatarText: '导',
+      avatarColor: '#64748B'
+    },
+    {
+      id: 'senior',
+      kind: 'friend',
+      title: '师兄',
+      preview: '我把复现脚本放到共享目录了，你先看 README',
+      time: '17:04',
+      unreadCount: 8,
+      avatarText: '兄',
+      avatarColor: '#7C3AED'
+    }
+  ];
   @State aiMode: string = 'paper';
   @State aiPrompt: string = '';
   @State aiAnswer: string = '';
@@ -407,6 +481,61 @@ struct Index {
       this.reloadNotifications();
     }).catch((error: Error) => {
       this.messageError = error.message;
+    });
+  }
+
+  private notificationsForMode(mode: string): NotificationItem[] {
+    if (mode === 'like') {
+      return this.messageItems.filter((item: NotificationItem) => item.type === 'like' || item.type === 'collection');
+    }
+    if (mode === 'follow') {
+      return this.messageItems.filter((item: NotificationItem) => item.type === 'follow');
+    }
+    if (mode === 'comment') {
+      return this.messageItems.filter((item: NotificationItem) => item.type === 'comment');
+    }
+    if (mode === 'system') {
+      return this.messageItems.filter((item: NotificationItem) => item.type === 'system');
+    }
+    return this.messageItems;
+  }
+
+  private unreadCountForMode(mode: string): number {
+    return this.notificationsForMode(mode).filter((item: NotificationItem) => !item.isRead).length;
+  }
+
+  private messageModeTitle(): string {
+    if (this.messageMode === 'like') {
+      return '赞和收藏';
+    }
+    if (this.messageMode === 'follow') {
+      return '新增关注';
+    }
+    if (this.messageMode === 'comment') {
+      return '评论和@';
+    }
+    if (this.messageMode === 'system') {
+      return '互动通知';
+    }
+    return '互动通知';
+  }
+
+  private openNotification(item: NotificationItem): void {
+    this.readNotification(item.id);
+    const relatedId = item.relatedItemId === undefined ? '' : item.relatedItemId;
+    if (relatedId.length === 0 || relatedId === 'welcome' || relatedId.startsWith('author-')) {
+      return;
+    }
+    if (relatedId.startsWith('paper:')) {
+      router.pushUrl({
+        url: 'pages/PDFReader',
+        params: { paperId: relatedId.substring(6) }
+      });
+      return;
+    }
+    router.pushUrl({
+      url: 'pages/DailyPostDetail',
+      params: { id: relatedId }
     });
   }
 
@@ -1757,6 +1886,12 @@ struct Index {
     if (type === 'like') {
       return '点赞';
     }
+    if (type === 'collection') {
+      return '收藏';
+    }
+    if (type === 'follow') {
+      return '关注';
+    }
     if (type === 'comment') {
       return '评论';
     }
@@ -1765,168 +1900,369 @@ struct Index {
 
   private notificationTypeColor(type: string): string {
     if (type === 'like') {
+      return AppColor.danger;
+    }
+    if (type === 'collection') {
       return AppColor.series3;
+    }
+    if (type === 'follow') {
+      return AppColor.series1;
     }
     if (type === 'comment') {
       return AppColor.series2;
     }
-    return AppColor.series1;
+    return '#2563EB';
   }
 
   @Builder
-  private messageCard(item: NotificationItem): void {
+  private messageShortcut(label: string, title: string, tint: string, count: number, mode: string): void {
     Column({ space: Space.sm }) {
-      Row({ space: Space.sm }) {
-        Text(this.notificationTypeText(item.type))
-          .fontSize(Font.small)
-          .fontColor(this.notificationTypeColor(item.type))
-          .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
-          .backgroundColor(item.isRead ? AppColor.surfaceSoft : AppColor.accentSoft)
-          .borderRadius(Radius.sm);
-        Text(item.isRead ? '已读' : '未读')
-          .fontSize(Font.small)
-          .fontColor(item.isRead ? AppColor.textMuted : AppColor.warning);
-        Blank();
-        Text(item.createdAt)
-          .fontSize(Font.small)
-          .fontColor(AppColor.textMuted);
+      Column() {
+        Text(label)
+          .fontSize(24)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(tint)
+          .textAlign(TextAlign.Center);
+        if (count > 0) {
+          Text(count > 99 ? '99+' : count.toString())
+            .fontSize(Font.caption)
+            .fontColor(AppColor.textOnPrimary)
+            .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+            .backgroundColor(AppColor.danger)
+            .borderRadius(Radius.pill)
+            .position({ x: 46, y: 4 });
+        }
       }
-      .width('100%');
+      .width(64)
+      .height(64)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .backgroundColor(this.shortcutBackground(tint))
+      .borderRadius(20)
+      .border({ width: this.messageMode === mode ? 1 : 0, color: tint });
 
-      Text(item.title)
-        .fontSize(Font.sub)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(AppColor.textTitle)
-        .width('100%');
-
-      Text(item.content)
+      Text(title)
         .fontSize(Font.body)
-        .fontColor(AppColor.textSecondary)
-        .lineHeight(20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(AppColor.textTitle)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis });
+    }
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Center)
+    .onClick(() => {
+      this.messageMode = mode;
+      this.reloadNotifications();
+    });
+  }
+
+  private shortcutBackground(tint: string): string {
+    if (tint === AppColor.danger) {
+      return '#FBEAEA';
+    }
+    if (tint === AppColor.series2) {
+      return '#E6F4F2';
+    }
+    if (tint === '#2563EB') {
+      return '#EAF3FF';
+    }
+    return '#EEF2F6';
+  }
+
+  @Builder
+  private searchActionButton(): void {
+    Stack() {
+      Column()
+        .width(12)
+        .height(12)
+        .border({ width: 2, color: AppColor.textBody })
+        .borderRadius(6)
+        .position({ x: 9, y: 8 });
+      Column()
+        .width(8)
+        .height(2)
+        .backgroundColor(AppColor.textBody)
+        .borderRadius(1)
+        .rotate({ angle: 45 })
+        .position({ x: 18, y: 20 });
+    }
+    .width(34)
+    .height(34)
+    .backgroundColor(AppColor.surface)
+    .border({ width: 1, color: AppColor.border })
+    .borderRadius(17);
+  }
+
+  @Builder
+  private notificationRow(item: NotificationItem): void {
+    Row({ space: Space.md }) {
+      Text(this.notificationTypeText(item.type).substring(0, 1))
+        .width(40)
+        .height(40)
+        .fontSize(Font.body)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.notificationTypeColor(item.type))
+        .textAlign(TextAlign.Center)
+        .backgroundColor(this.shortcutBackground(this.notificationTypeColor(item.type)))
+        .borderRadius(20);
+      Column({ space: Space.xs }) {
+        Row() {
+          Text(item.title)
+            .fontSize(Font.body)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle)
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis });
+          Text(item.createdAt)
+            .fontSize(Font.caption)
+            .fontColor(AppColor.textMuted);
+        }
         .width('100%');
+        Row({ space: Space.sm }) {
+          Text(this.notificationTypeText(item.type))
+            .fontSize(Font.caption)
+            .fontColor(this.notificationTypeColor(item.type))
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            .backgroundColor(this.shortcutBackground(this.notificationTypeColor(item.type)))
+            .borderRadius(Radius.sm);
+          Text(item.content)
+            .fontSize(Font.small)
+            .fontColor(AppColor.textSecondary)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1);
+          if (!item.isRead) {
+            Column()
+              .width(8)
+              .height(8)
+              .backgroundColor(AppColor.danger)
+              .borderRadius(4);
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center);
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start);
     }
     .width('100%')
-    .padding(Space.lg)
-    .backgroundColor(item.isRead ? AppColor.surface : AppColor.accentSoft)
-    .borderRadius(Radius.lg)
-    .border({ width: 1, color: item.isRead ? AppColor.border : AppColor.accent })
+    .padding({ left: Space.sm, right: Space.sm, top: Space.md, bottom: Space.md })
     .onClick(() => {
-      if (!item.isRead) {
-        this.readNotification(item.id);
-      }
+      this.openNotification(item);
     });
   }
 
   @Builder
-  private messagesTab(): void {
-    Column({ space: Space.lg }) {
+  private notificationPanel(): void {
+    Column({ space: Space.md }) {
       Row() {
-        Column({ space: Space.xs }) {
-          Text('消息')
-            .fontSize(Font.h1)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(AppColor.textTitle);
-          Text('点赞、评论回复和系统通知')
-            .fontSize(Font.small)
-            .fontColor(AppColor.textSecondary);
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start);
-
-        if (authService.isLoggedIn() && this.messageItems.length > 0) {
-          Button('全已读')
-            .height(32)
-            .fontSize(Font.small)
-            .fontColor(AppColor.textOnPrimary)
-            .backgroundColor(AppColor.primary)
-            .borderRadius(Radius.pill)
-            .onClick(() => {
-              this.readAllNotifications();
-            });
-          Button('清空')
-            .height(32)
-            .fontSize(Font.small)
-            .fontColor(AppColor.danger)
-            .backgroundColor(AppColor.dangerSoft)
-            .borderRadius(Radius.pill)
-            .onClick(() => {
-              this.clearNotifications();
-            });
-        }
+        Text(this.messageModeTitle())
+          .fontSize(Font.title)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.textTitle);
+        Blank();
+        Button('全部已读')
+          .height(30)
+          .fontSize(Font.small)
+          .fontColor(AppColor.textSecondary)
+          .backgroundColor(AppColor.surfaceSoft)
+          .borderRadius(Radius.pill)
+          .onClick(() => {
+            this.readAllNotifications();
+          });
+        Button('清空')
+          .height(30)
+          .fontSize(Font.small)
+          .fontColor(AppColor.danger)
+          .backgroundColor(AppColor.dangerSoft)
+          .borderRadius(Radius.pill)
+          .margin({ left: Space.sm })
+          .onClick(() => {
+            this.clearNotifications();
+          });
       }
       .width('100%')
       .alignItems(VerticalAlign.Center);
 
-      if (!authService.isLoggedIn()) {
-        Column({ space: Space.md }) {
-          Text('✉')
-            .fontSize(32)
-            .fontColor(AppColor.accent)
-            .width(64)
-            .height(64)
-            .textAlign(TextAlign.Center)
-            .backgroundColor(AppColor.accentSoft)
-            .borderRadius(32);
-          Text('登录后查看消息')
-            .fontSize(Font.title)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(AppColor.textTitle);
-          Text('社区互动、回复提醒和系统公告会同步到这里。')
-            .fontSize(Font.small)
-            .fontColor(AppColor.textSecondary)
-            .textAlign(TextAlign.Center)
-            .lineHeight(20);
-          Button('登录 / 注册')
-            .height(44)
-            .width('100%')
-            .fontColor(AppColor.textOnPrimary)
-            .backgroundColor(AppColor.primary)
-            .borderRadius(Radius.lg)
-            .onClick(() => {
-              router.pushUrl({ url: 'pages/Login' });
-            });
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center);
-      } else if (this.messageItems.length === 0) {
-        Column({ space: Space.sm }) {
-          Text('暂无消息')
-            .fontSize(Font.sub)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(AppColor.textBody);
-          Text('新的点赞、评论和系统公告会显示在这里。')
-            .fontSize(Font.body)
-            .fontColor(AppColor.textMuted)
-            .textAlign(TextAlign.Center);
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center);
+      if (this.notificationsForMode(this.messageMode).length === 0) {
+        Text('暂无新的互动通知')
+          .fontSize(Font.small)
+          .fontColor(AppColor.textMuted)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding(Space.md);
       } else {
-        if (this.messageError.length > 0) {
-          Text(this.messageError)
-            .fontSize(Font.small)
-            .fontColor(AppColor.danger)
-            .width('100%');
-        }
-
-        List({ space: Space.md }) {
-          ForEach(this.messageItems, (item: NotificationItem) => {
-            ListItem() {
-              this.messageCard(item);
-            }
-          }, (item: NotificationItem) => item.id.toString());
-        }
-        .edgeEffect(EdgeEffect.Spring)
-        .width('100%')
-        .layoutWeight(1);
+        ForEach(this.notificationsForMode(this.messageMode), (item: NotificationItem, index: number) => {
+          this.notificationRow(item);
+          if (index < this.notificationsForMode(this.messageMode).length - 1) {
+            Divider()
+              .color(AppColor.border)
+              .margin({ left: 58, right: Space.sm });
+          }
+        }, (item: NotificationItem) => item.id.toString());
       }
     }
     .width('100%')
+    .padding(Space.md)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: AppColor.border });
+  }
+
+  @Builder
+  private conversationAvatar(item: MessageConversation): void {
+    Text(item.avatarText)
+      .width(54)
+      .height(54)
+      .borderRadius(27)
+      .backgroundColor(item.avatarColor)
+      .fontColor(AppColor.textOnPrimary)
+      .fontSize(Font.sub)
+      .fontWeight(FontWeight.Bold)
+      .textAlign(TextAlign.Center);
+  }
+
+  @Builder
+  private conversationRow(item: MessageConversation): void {
+    Row({ space: Space.md }) {
+      this.conversationAvatar(item);
+      Column({ space: Space.xs }) {
+        Row() {
+          Text(item.title)
+            .fontSize(Font.sub)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1);
+          Text(item.time)
+            .fontSize(Font.small)
+            .fontColor(AppColor.textMuted);
+        }
+        .width('100%');
+
+        Row({ space: Space.sm }) {
+          Text(item.kind === 'group' ? '群聊' : (item.kind === 'friend' ? '好友' : '系统'))
+            .fontSize(Font.caption)
+            .fontColor(item.kind === 'friend' ? AppColor.accentStrong : AppColor.textMuted)
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            .backgroundColor(item.kind === 'friend' ? AppColor.accentSoft : AppColor.surfaceSoft)
+            .borderRadius(Radius.sm);
+          Text(item.preview)
+            .fontSize(Font.body)
+            .fontColor(AppColor.textSecondary)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1);
+          if (item.unreadCount > 0) {
+            Text(item.unreadCount > 99 ? '99+' : item.unreadCount.toString())
+              .fontSize(Font.caption)
+              .fontColor(AppColor.textOnPrimary)
+              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+              .backgroundColor(AppColor.danger)
+              .borderRadius(Radius.pill);
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center);
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start);
+    }
+    .width('100%')
+    .padding({ left: Space.sm, right: Space.sm, top: Space.md, bottom: Space.md });
+  }
+
+  @Builder
+  private messagesTab(): void {
+    Column() {
+      Row() {
+        Row()
+          .width(76);
+
+        Text('消息')
+          .fontSize(Font.h2)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.textTitle)
+          .textAlign(TextAlign.Center)
+          .layoutWeight(1);
+
+        Row({ space: Space.sm }) {
+          this.searchActionButton();
+          Text('+')
+            .width(34)
+            .height(34)
+            .fontSize(24)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textBody)
+            .backgroundColor(AppColor.surface)
+            .border({ width: 1, color: AppColor.border })
+            .borderRadius(17)
+            .textAlign(TextAlign.Center);
+        }
+        .width(76)
+        .justifyContent(FlexAlign.End)
+        .alignItems(VerticalAlign.Center);
+      }
+      .width('100%')
+      .height(60)
+      .padding({ left: Space.lg, right: Space.lg })
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(AppColor.surface);
+
+      Scroll() {
+        Column({ space: Space.xl }) {
+          Row({ space: Space.md }) {
+            this.messageShortcut('赞', '赞和收藏', AppColor.danger, this.unreadCountForMode('like'), 'like');
+            this.messageShortcut('+', '新增关注', AppColor.series1, this.unreadCountForMode('follow'), 'follow');
+            this.messageShortcut('@', '评论和@', AppColor.series2, this.unreadCountForMode('comment'), 'comment');
+            this.messageShortcut('✉', '互动通知', '#2563EB', this.unreadCountForMode('system'), 'system');
+          }
+          .width('100%')
+          .padding({ top: Space.lg, bottom: Space.lg });
+
+          if (this.messageMode !== 'chat') {
+            this.notificationPanel();
+          }
+
+          Text('会话')
+            .fontSize(Font.title)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle)
+            .width('100%');
+
+          Column() {
+            ForEach(this.messageConversations, (item: MessageConversation, index: number) => {
+              this.conversationRow(item);
+              if (index < this.messageConversations.length - 1) {
+                Divider()
+                  .color(AppColor.border)
+                  .margin({ left: 74, right: Space.sm });
+              }
+            }, (item: MessageConversation) => item.id);
+          }
+          .width('100%')
+          .backgroundColor(AppColor.surface)
+          .borderRadius(Radius.lg)
+          .border({ width: 1, color: AppColor.border });
+
+          if (this.messageError.length > 0) {
+            Text(this.messageError)
+              .fontSize(Font.small)
+              .fontColor(AppColor.danger)
+              .width('100%');
+          }
+        }
+        .width('100%')
+        .padding({ left: Space.lg, right: Space.lg, bottom: Space.xxl });
+      }
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .backgroundColor(AppColor.bg);
+    }
+    .width('100%')
     .height('100%')
-    .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.md })
     .backgroundColor(AppColor.bg);
   }
 
@@ -2054,7 +2390,7 @@ struct Index {
             });
             Divider().color(AppColor.border).margin({ left: 64, right: Space.md });
             this.menuRow('✉', '消息通知', this.unreadCount, () => {
-              router.pushUrl({ url: 'pages/Messages' });
+              this.selectMainTab(3);
             });
             Divider().color(AppColor.border).margin({ left: 64, right: Space.md });
             this.menuRow('▤', '科研数据看板', 0, () => {
