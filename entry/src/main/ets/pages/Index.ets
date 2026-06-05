@@ -54,6 +54,9 @@ struct Index {
   @State unreadCount: number = 0;
   @State messageItems: NotificationItem[] = [];
   @State messageError: string = '';
+  @State aiMode: string = 'paper';
+  @State aiPrompt: string = '';
+  @State aiAnswer: string = '';
   @State currentTab: number = 0;
   @State likedPostIds: string[] = [];
   private tabsController: TabsController = new TabsController();
@@ -383,7 +386,7 @@ struct Index {
     this.editorImages = post.imageUrls;
     this.editorCategoryId = post.categoryId;
     this.editorTagIds = post.tagIds;
-    this.tabsController.changeIndex(1);
+    this.tabsController.changeIndex(2);
   }
 
   private deletePost(postId: string): void {
@@ -571,7 +574,7 @@ struct Index {
   }
 
   @Builder
-  private topChannel(title: string, active: boolean): void {
+  private topChannel(title: string, active: boolean, action: () => void): void {
     Column({ space: Space.xs }) {
       Text(title)
         .fontSize(22)
@@ -584,7 +587,8 @@ struct Index {
         .borderRadius(2);
     }
     .height(56)
-    .justifyContent(FlexAlign.Center);
+    .justifyContent(FlexAlign.Center)
+    .onClick(action);
   }
 
   @Builder
@@ -607,39 +611,27 @@ struct Index {
         .fontColor(AppColor.textTitle)
         .textAlign(TextAlign.Center);
 
-      Row({ space: 56 }) {
-        this.topChannel('关注', false);
-        this.topChannel('发现', true);
+      Row({ space: 34 }) {
+        this.topChannel('关注', false, () => {
+        });
+        this.topChannel('发现', true, () => {
+        });
+        this.topChannel('高校', false, () => {
+          router.pushUrl({ url: 'pages/CollegeCircle' });
+        });
       }
       .layoutWeight(1)
       .justifyContent(FlexAlign.Center);
 
-      Row({ space: Space.xs }) {
-        Text('校')
-          .width(38)
-          .height(38)
-          .fontSize(Font.sub)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(AppColor.accentStrong)
-          .textAlign(TextAlign.Center)
-          .backgroundColor(AppColor.accentSoft)
-          .borderRadius(19)
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/CollegeCircle' });
-          });
-
-        Text('⌕')
-          .width(46)
-          .height(56)
-          .fontSize(34)
-          .fontColor(AppColor.textTitle)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/Search' });
-          });
-      }
-      .height(56)
-      .alignItems(VerticalAlign.Center);
+      Text('⌕')
+        .width(46)
+        .height(56)
+        .fontSize(34)
+        .fontColor(AppColor.textTitle)
+        .textAlign(TextAlign.Center)
+        .onClick(() => {
+          router.pushUrl({ url: 'pages/Search' });
+        });
     }
     .width('100%')
     .height(64)
@@ -754,7 +746,7 @@ struct Index {
 
   @Builder
   private tabBarItem(title: string, index: number): void {
-    if (index === 1) {
+    if (index === 2) {
       Column() {
         Text('+')
           .width(58)
@@ -775,7 +767,7 @@ struct Index {
             .fontSize(22)
             .fontWeight(this.currentTab === index ? FontWeight.Bold : FontWeight.Normal)
             .fontColor(this.currentTab === index ? AppColor.textTitle : AppColor.textMuted);
-          if (index === 2 && this.unreadCount > 0) {
+          if (index === 3 && this.unreadCount > 0) {
             Text(this.unreadCount > 99 ? '99+' : this.unreadCount.toString())
               .fontSize(Font.caption)
               .fontColor(AppColor.textOnPrimary)
@@ -1209,6 +1201,194 @@ struct Index {
     .backgroundColor(AppColor.bg);
   }
 
+  private aiModeName(mode: string): string {
+    if (mode === 'topic') {
+      return '选题';
+    }
+    if (mode === 'experiment') {
+      return '实验';
+    }
+    return '文献';
+  }
+
+  private aiModeDescription(): string {
+    if (this.aiMode === 'topic') {
+      return '把模糊想法整理成可执行的研究问题。';
+    }
+    if (this.aiMode === 'experiment') {
+      return '拆解实验目标、变量、指标和风险点。';
+    }
+    return '快速提炼论文贡献、方法、数据和可复现线索。';
+  }
+
+  private fillAiPrompt(text: string): void {
+    this.aiPrompt = text;
+    this.aiAnswer = '';
+  }
+
+  private generateAiAnswer(): void {
+    const subject = this.aiPrompt.trim().length > 0 ? this.aiPrompt.trim() : '当前研究问题';
+    if (this.aiMode === 'topic') {
+      this.aiAnswer = `围绕「${subject}」可以先收敛为三个方向：\n1. 明确目标人群、数据来源和可验证指标。\n2. 找 5 篇近两年的综述或基准论文，整理尚未解决的限制。\n3. 把问题写成“输入、方法、输出、评价”的一句话，并准备一个最小验证实验。`;
+      return;
+    }
+    if (this.aiMode === 'experiment') {
+      this.aiAnswer = `针对「${subject}」建议这样拆实验：\n1. 固定一个主变量，只保留必要对照组。\n2. 先跑小样本验证流程，记录失败条件和数据缺口。\n3. 指标至少包含效果、稳定性和成本三类，方便后续写日报复盘。`;
+      return;
+    }
+    this.aiAnswer = `阅读「${subject}」时可以重点抓四件事：\n1. 论文要解决的问题和已有方法的短板。\n2. 核心方法中真正新增的模块或假设。\n3. 数据集、评价指标和消融实验是否支撑结论。\n4. 可迁移到你当前课题的代码、数据或实验模板。`;
+  }
+
+  @Builder
+  private aiModeChip(mode: string, title: string): void {
+    Text(title)
+      .fontSize(Font.body)
+      .fontWeight(this.aiMode === mode ? FontWeight.Bold : FontWeight.Medium)
+      .fontColor(this.aiMode === mode ? AppColor.textOnPrimary : AppColor.textBody)
+      .height(38)
+      .padding({ left: Space.lg, right: Space.lg })
+      .backgroundColor(this.aiMode === mode ? AppColor.primary : AppColor.surface)
+      .border({ width: 1, color: this.aiMode === mode ? AppColor.primary : AppColor.border })
+      .borderRadius(Radius.pill)
+      .onClick(() => {
+        this.aiMode = mode;
+        this.aiAnswer = '';
+      });
+  }
+
+  @Builder
+  private aiPromptPreset(text: string): void {
+    Text(text)
+      .fontSize(Font.small)
+      .fontColor(AppColor.textBody)
+      .maxLines(2)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+      .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+      .backgroundColor(AppColor.surface)
+      .border({ width: 1, color: AppColor.border })
+      .borderRadius(Radius.md)
+      .margin({ right: Space.sm, bottom: Space.sm })
+      .onClick(() => {
+        this.fillAiPrompt(text);
+      });
+  }
+
+  @Builder
+  private aiTab(): void {
+    Scroll() {
+      Column({ space: Space.lg }) {
+        Column({ space: Space.xs }) {
+          Text('AI')
+            .fontSize(Font.h1)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle)
+            .width('100%');
+          Text('把科研想法整理成下一步行动')
+            .fontSize(Font.small)
+            .fontColor(AppColor.textSecondary)
+            .width('100%');
+        }
+        .width('100%');
+
+        Column({ space: Space.md }) {
+          Row({ space: Space.sm }) {
+            this.aiModeChip('paper', '文献速读');
+            this.aiModeChip('topic', '选题建议');
+            this.aiModeChip('experiment', '实验设计');
+          }
+          .width('100%');
+
+          Text(this.aiModeDescription())
+            .fontSize(Font.small)
+            .fontColor(AppColor.textSecondary)
+            .width('100%');
+
+          TextArea({ placeholder: '输入论文标题、研究想法或实验目标', text: this.aiPrompt })
+            .height(142)
+            .fontSize(Font.body)
+            .fontColor(AppColor.textBody)
+            .placeholderColor(AppColor.textMuted)
+            .lineHeight(22)
+            .backgroundColor(AppColor.surfaceSoft)
+            .border({ width: 1, color: AppColor.border })
+            .borderRadius(Radius.lg)
+            .padding(Space.md)
+            .onChange((value: string) => {
+              this.aiPrompt = value;
+            });
+
+          Button(`生成${this.aiModeName(this.aiMode)}建议`)
+            .height(44)
+            .width('100%')
+            .fontColor(AppColor.textOnPrimary)
+            .fontWeight(FontWeight.Medium)
+            .backgroundColor(AppColor.primary)
+            .borderRadius(Radius.lg)
+            .onClick(() => {
+              this.generateAiAnswer();
+            });
+        }
+        .width('100%')
+        .padding(Space.lg)
+        .backgroundColor(AppColor.surface)
+        .borderRadius(Radius.lg)
+        .border({ width: 1, color: AppColor.border })
+        .shadow(Elevation.card);
+
+        Column({ space: Space.sm }) {
+          Text('常用入口')
+            .fontSize(Font.title)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle)
+            .width('100%');
+          Flex({ wrap: FlexWrap.Wrap }) {
+            this.aiPromptPreset('帮我梳理这篇论文的创新点和可复现实验');
+            this.aiPromptPreset('把单细胞免疫图谱方向整理成一个开题问题');
+            this.aiPromptPreset('为 Retrieval-Augmented Generation 设计一组对照实验');
+          }
+          .width('100%');
+        }
+        .width('100%');
+
+        if (this.aiAnswer.length > 0) {
+          Column({ space: Space.md }) {
+            Row() {
+              Text(`${this.aiModeName(this.aiMode)}建议`)
+                .fontSize(Font.title)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(AppColor.textTitle);
+              Blank();
+              Text('本地草稿')
+                .fontSize(Font.caption)
+                .fontColor(AppColor.accentStrong)
+                .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
+                .backgroundColor(AppColor.accentSoft)
+                .borderRadius(Radius.sm);
+            }
+            .width('100%');
+
+            Text(this.aiAnswer)
+              .fontSize(Font.body)
+              .fontColor(AppColor.textBody)
+              .lineHeight(24)
+              .width('100%');
+          }
+          .width('100%')
+          .padding(Space.lg)
+          .backgroundColor(AppColor.surface)
+          .borderRadius(Radius.lg)
+          .border({ width: 1, color: AppColor.border });
+        }
+      }
+      .width('100%')
+      .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.xxl });
+    }
+    .width('100%')
+    .height('100%')
+    .scrollBar(BarState.Off)
+    .backgroundColor(AppColor.bg);
+  }
+
   private notificationTypeText(type: string): string {
     if (type === 'like') {
       return '点赞';
@@ -1600,19 +1780,24 @@ struct Index {
       .tabBar(this.tabBarItem('首页', 0));
 
       TabContent() {
+        this.aiTab();
+      }
+      .tabBar(this.tabBarItem('AI', 1));
+
+      TabContent() {
         this.editorTab();
       }
-      .tabBar(this.tabBarItem('创作', 1));
+      .tabBar(this.tabBarItem('创作', 2));
 
       TabContent() {
         this.messagesTab();
       }
-      .tabBar(this.tabBarItem('消息', 2));
+      .tabBar(this.tabBarItem('消息', 3));
 
       TabContent() {
         this.profileTab();
       }
-      .tabBar(this.tabBarItem('我的', 3));
+      .tabBar(this.tabBarItem('我的', 4));
     }
     .width('100%')
     .height('100%')
@@ -1621,7 +1806,7 @@ struct Index {
     .divider({ strokeWidth: 1, color: AppColor.border })
     .onChange((index: number) => {
       this.currentTab = index;
-      if (index === 2) {
+      if (index === 3) {
         this.reloadNotifications();
       }
     });
