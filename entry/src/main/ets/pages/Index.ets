@@ -1,5 +1,5 @@
 import { router } from '@kit.ArkUI';
-import { NotificationBundle } from '../models/Community';
+import { NotificationBundle, NotificationItem } from '../models/Community';
 import { PaperItem } from '../models/Paper';
 import { ResearchNews } from '../models/ResearchNews';
 import { DailyPost, DailyPostDraft, DailyTemplate, TopicCategory, TopicTag } from '../models/DailyPost';
@@ -52,6 +52,8 @@ struct Index {
   @State selectedTemplateId: string = '';
   @State detailPost: DailyPost | undefined = undefined;
   @State unreadCount: number = 0;
+  @State messageItems: NotificationItem[] = [];
+  @State messageError: string = '';
   @State currentTab: number = 0;
   @State likedPostIds: string[] = [];
   private tabsController: TabsController = new TabsController();
@@ -250,12 +252,42 @@ struct Index {
   private reloadNotifications(): void {
     if (!authService.isLoggedIn()) {
       this.unreadCount = 0;
+      this.messageItems = [];
+      this.messageError = '';
       return;
     }
     communityService.getNotifications().then((bundle: NotificationBundle) => {
       this.unreadCount = bundle.unreadCount;
+      this.messageItems = bundle.items;
+      this.messageError = '';
     }).catch((error: Error) => {
       this.unreadCount = 0;
+      this.messageItems = [];
+      this.messageError = error.message;
+    });
+  }
+
+  private readNotification(id: number): void {
+    communityService.markNotificationRead(id).then(() => {
+      this.reloadNotifications();
+    }).catch((error: Error) => {
+      this.messageError = error.message;
+    });
+  }
+
+  private readAllNotifications(): void {
+    communityService.markAllNotificationsRead().then(() => {
+      this.reloadNotifications();
+    }).catch((error: Error) => {
+      this.messageError = error.message;
+    });
+  }
+
+  private clearNotifications(): void {
+    communityService.clearNotifications().then(() => {
+      this.reloadNotifications();
+    }).catch((error: Error) => {
+      this.messageError = error.message;
     });
   }
 
@@ -582,15 +614,32 @@ struct Index {
       .layoutWeight(1)
       .justifyContent(FlexAlign.Center);
 
-      Text('⌕')
-        .width(46)
-        .height(56)
-        .fontSize(34)
-        .fontColor(AppColor.textTitle)
-        .textAlign(TextAlign.Center)
-        .onClick(() => {
-          router.pushUrl({ url: 'pages/Search' });
-        });
+      Row({ space: Space.xs }) {
+        Text('校')
+          .width(38)
+          .height(38)
+          .fontSize(Font.sub)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.accentStrong)
+          .textAlign(TextAlign.Center)
+          .backgroundColor(AppColor.accentSoft)
+          .borderRadius(19)
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/CollegeCircle' });
+          });
+
+        Text('⌕')
+          .width(46)
+          .height(56)
+          .fontSize(34)
+          .fontColor(AppColor.textTitle)
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/Search' });
+          });
+      }
+      .height(56)
+      .alignItems(VerticalAlign.Center);
     }
     .width('100%')
     .height(64)
@@ -721,10 +770,21 @@ struct Index {
       .justifyContent(FlexAlign.Center);
     } else {
       Column({ space: Space.xs }) {
-        Text(title)
-          .fontSize(22)
-          .fontWeight(this.currentTab === index ? FontWeight.Bold : FontWeight.Normal)
-          .fontColor(this.currentTab === index ? AppColor.textTitle : AppColor.textMuted);
+        Row({ space: Space.xs }) {
+          Text(title)
+            .fontSize(22)
+            .fontWeight(this.currentTab === index ? FontWeight.Bold : FontWeight.Normal)
+            .fontColor(this.currentTab === index ? AppColor.textTitle : AppColor.textMuted);
+          if (index === 2 && this.unreadCount > 0) {
+            Text(this.unreadCount > 99 ? '99+' : this.unreadCount.toString())
+              .fontSize(Font.caption)
+              .fontColor(AppColor.textOnPrimary)
+              .backgroundColor(AppColor.danger)
+              .borderRadius(Radius.pill)
+              .padding({ left: 6, right: 6, top: 1, bottom: 1 });
+          }
+        }
+        .alignItems(VerticalAlign.Center);
         Column()
           .width(this.currentTab === index ? 34 : 0)
           .height(3)
@@ -1148,6 +1208,184 @@ struct Index {
     .height('100%')
     .backgroundColor(AppColor.bg);
   }
+
+  private notificationTypeText(type: string): string {
+    if (type === 'like') {
+      return '点赞';
+    }
+    if (type === 'comment') {
+      return '评论';
+    }
+    return '系统';
+  }
+
+  private notificationTypeColor(type: string): string {
+    if (type === 'like') {
+      return AppColor.series3;
+    }
+    if (type === 'comment') {
+      return AppColor.series2;
+    }
+    return AppColor.series1;
+  }
+
+  @Builder
+  private messageCard(item: NotificationItem): void {
+    Column({ space: Space.sm }) {
+      Row({ space: Space.sm }) {
+        Text(this.notificationTypeText(item.type))
+          .fontSize(Font.small)
+          .fontColor(this.notificationTypeColor(item.type))
+          .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
+          .backgroundColor(item.isRead ? AppColor.surfaceSoft : AppColor.accentSoft)
+          .borderRadius(Radius.sm);
+        Text(item.isRead ? '已读' : '未读')
+          .fontSize(Font.small)
+          .fontColor(item.isRead ? AppColor.textMuted : AppColor.warning);
+        Blank();
+        Text(item.createdAt)
+          .fontSize(Font.small)
+          .fontColor(AppColor.textMuted);
+      }
+      .width('100%');
+
+      Text(item.title)
+        .fontSize(Font.sub)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(AppColor.textTitle)
+        .width('100%');
+
+      Text(item.content)
+        .fontSize(Font.body)
+        .fontColor(AppColor.textSecondary)
+        .lineHeight(20)
+        .width('100%');
+    }
+    .width('100%')
+    .padding(Space.lg)
+    .backgroundColor(item.isRead ? AppColor.surface : AppColor.accentSoft)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: item.isRead ? AppColor.border : AppColor.accent })
+    .onClick(() => {
+      if (!item.isRead) {
+        this.readNotification(item.id);
+      }
+    });
+  }
+
+  @Builder
+  private messagesTab(): void {
+    Column({ space: Space.lg }) {
+      Row() {
+        Column({ space: Space.xs }) {
+          Text('消息')
+            .fontSize(Font.h1)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle);
+          Text('点赞、评论回复和系统通知')
+            .fontSize(Font.small)
+            .fontColor(AppColor.textSecondary);
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start);
+
+        if (authService.isLoggedIn() && this.messageItems.length > 0) {
+          Button('全已读')
+            .height(32)
+            .fontSize(Font.small)
+            .fontColor(AppColor.textOnPrimary)
+            .backgroundColor(AppColor.primary)
+            .borderRadius(Radius.pill)
+            .onClick(() => {
+              this.readAllNotifications();
+            });
+          Button('清空')
+            .height(32)
+            .fontSize(Font.small)
+            .fontColor(AppColor.danger)
+            .backgroundColor(AppColor.dangerSoft)
+            .borderRadius(Radius.pill)
+            .onClick(() => {
+              this.clearNotifications();
+            });
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center);
+
+      if (!authService.isLoggedIn()) {
+        Column({ space: Space.md }) {
+          Text('✉')
+            .fontSize(32)
+            .fontColor(AppColor.accent)
+            .width(64)
+            .height(64)
+            .textAlign(TextAlign.Center)
+            .backgroundColor(AppColor.accentSoft)
+            .borderRadius(32);
+          Text('登录后查看消息')
+            .fontSize(Font.title)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle);
+          Text('社区互动、回复提醒和系统公告会同步到这里。')
+            .fontSize(Font.small)
+            .fontColor(AppColor.textSecondary)
+            .textAlign(TextAlign.Center)
+            .lineHeight(20);
+          Button('登录 / 注册')
+            .height(44)
+            .width('100%')
+            .fontColor(AppColor.textOnPrimary)
+            .backgroundColor(AppColor.primary)
+            .borderRadius(Radius.lg)
+            .onClick(() => {
+              router.pushUrl({ url: 'pages/Login' });
+            });
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center);
+      } else if (this.messageItems.length === 0) {
+        Column({ space: Space.sm }) {
+          Text('暂无消息')
+            .fontSize(Font.sub)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(AppColor.textBody);
+          Text('新的点赞、评论和系统公告会显示在这里。')
+            .fontSize(Font.body)
+            .fontColor(AppColor.textMuted)
+            .textAlign(TextAlign.Center);
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center);
+      } else {
+        if (this.messageError.length > 0) {
+          Text(this.messageError)
+            .fontSize(Font.small)
+            .fontColor(AppColor.danger)
+            .width('100%');
+        }
+
+        List({ space: Space.md }) {
+          ForEach(this.messageItems, (item: NotificationItem) => {
+            ListItem() {
+              this.messageCard(item);
+            }
+          }, (item: NotificationItem) => item.id.toString());
+        }
+        .edgeEffect(EdgeEffect.Spring)
+        .width('100%')
+        .layoutWeight(1);
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.md })
+    .backgroundColor(AppColor.bg);
+  }
+
   private profileSubtitle(): string {
     if (this.currentUser === undefined) {
       return '';
@@ -1367,9 +1605,14 @@ struct Index {
       .tabBar(this.tabBarItem('创作', 1));
 
       TabContent() {
+        this.messagesTab();
+      }
+      .tabBar(this.tabBarItem('消息', 2));
+
+      TabContent() {
         this.profileTab();
       }
-      .tabBar(this.tabBarItem('我的', 2));
+      .tabBar(this.tabBarItem('我的', 3));
     }
     .width('100%')
     .height('100%')
@@ -1378,6 +1621,9 @@ struct Index {
     .divider({ strokeWidth: 1, color: AppColor.border })
     .onChange((index: number) => {
       this.currentTab = index;
+      if (index === 2) {
+        this.reloadNotifications();
+      }
     });
   }
 }

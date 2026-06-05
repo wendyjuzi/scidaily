@@ -2,6 +2,7 @@
   "src": [
     "pages/Index",
     "pages/Search",
+    "pages/CollegeCircle",
     "pages/Trending",
     "pages/DailyPostDetail",
     "pages/Detail",
