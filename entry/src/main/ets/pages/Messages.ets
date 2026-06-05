@@ -2,6 +2,7 @@ import { router } from '@kit.ArkUI';
 import { NotificationBundle, NotificationItem } from '../models/Community';
 import { authService } from '../services/AuthService';
 import { communityService } from '../services/CommunityService';
+import { AppColor, Space, Radius, Font } from '../theme/AppTheme';
 
 @Entry
 @Component
@@ -66,50 +67,51 @@ struct Messages {
 
   private typeColor(type: string): string {
     if (type === 'like') {
-      return '#E31B54';
+      return AppColor.series3;
     }
     if (type === 'comment') {
-      return '#1E88E5';
+      return AppColor.series2;
     }
-    return '#12B76A';
+    return AppColor.series1;
   }
 
   @Builder
   private noticeCard(item: NotificationItem): void {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) {
+    Column({ space: Space.sm }) {
+      Row({ space: Space.sm }) {
         Text(this.typeText(item.type))
-          .fontSize(12)
+          .fontSize(Font.small)
           .fontColor(this.typeColor(item.type))
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-          .backgroundColor(item.isRead ? '#F2F4F7' : '#EEF6FF')
-          .borderRadius(8);
+          .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
+          .backgroundColor(item.isRead ? AppColor.surfaceSoft : AppColor.accentSoft)
+          .borderRadius(Radius.sm);
         Text(item.isRead ? '已读' : '未读')
-          .fontSize(12)
-          .fontColor(item.isRead ? '#98A2B3' : '#F79009');
+          .fontSize(Font.small)
+          .fontColor(item.isRead ? AppColor.textMuted : AppColor.warning);
         Blank();
         Text(item.createdAt)
-          .fontSize(12)
-          .fontColor('#8A94A6');
+          .fontSize(Font.small)
+          .fontColor(AppColor.textMuted);
       }
       .width('100%');
 
       Text(item.title)
-        .fontSize(17)
+        .fontSize(Font.sub)
         .fontWeight(FontWeight.Medium)
-        .fontColor('#1D2939')
+        .fontColor(AppColor.textTitle)
         .width('100%');
 
       Text(item.content)
-        .fontSize(14)
-        .fontColor('#667085')
+        .fontSize(Font.body)
+        .fontColor(AppColor.textSecondary)
         .lineHeight(20)
         .width('100%');
     }
     .width('100%')
-    .padding(14)
-    .backgroundColor(item.isRead ? '#FFFFFF' : '#FFFDF5')
-    .borderRadius(12)
+    .padding(Space.lg)
+    .backgroundColor(item.isRead ? AppColor.surface : AppColor.accentSoft)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: item.isRead ? AppColor.border : AppColor.accent })
     .onClick(() => {
       if (!item.isRead) {
         this.readOne(item.id);
@@ -118,10 +120,14 @@ struct Messages {
   }
 
   build() {
-    Column({ space: 14 }) {
-      Row() {
+    Column({ space: Space.lg }) {
+      Row({ space: Space.sm }) {
         Button('返回')
           .type(ButtonType.Capsule)
+          .fontSize(Font.body)
+          .fontColor(AppColor.textBody)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
           .onClick(() => {
             router.back();
           });
@@ -129,15 +135,17 @@ struct Messages {
         if (this.items.length > 0) {
           Button('全已读')
             .type(ButtonType.Capsule)
-            .fontSize(12)
-            .backgroundColor('#1E88E5')
+            .fontSize(Font.small)
+            .fontColor(AppColor.textOnPrimary)
+            .backgroundColor(AppColor.primary)
             .onClick(() => {
               this.readAll();
             });
           Button('清空')
             .type(ButtonType.Capsule)
-            .fontSize(12)
-            .backgroundColor('#F04438')
+            .fontSize(Font.small)
+            .fontColor(AppColor.danger)
+            .backgroundColor(AppColor.dangerSoft)
             .onClick(() => {
               this.clearAll();
             });
@@ -147,43 +155,44 @@ struct Messages {
 
       Row() {
         Text('消息通知')
-          .fontSize(26)
-          .fontWeight(FontWeight.Bold);
+          .fontSize(Font.h1)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.textTitle);
         Blank();
         if (this.unreadCount > 0) {
           Text(`${this.unreadCount} 条未读`)
-            .fontSize(12)
-            .fontColor('#FFFFFF')
-            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-            .backgroundColor('#F79009')
-            .borderRadius(12);
+            .fontSize(Font.small)
+            .fontColor(AppColor.textOnPrimary)
+            .padding({ left: Space.md, right: Space.md, top: 5, bottom: 5 })
+            .backgroundColor(AppColor.warning)
+            .borderRadius(Radius.md);
         }
       }
       .width('100%');
 
       if (this.errorMessage.length > 0) {
         Text(this.errorMessage)
-          .fontSize(13)
-          .fontColor('#D92D20')
+          .fontSize(Font.small)
+          .fontColor(AppColor.danger)
           .width('100%');
       }
 
       if (this.items.length === 0) {
-        Column({ space: 8 }) {
+        Column({ space: Space.sm }) {
           Text('暂无消息')
-            .fontSize(17)
+            .fontSize(Font.sub)
             .fontWeight(FontWeight.Medium)
-            .fontColor('#475467');
+            .fontColor(AppColor.textBody);
           Text('点赞、评论回复和系统公告会显示在这里。')
-            .fontSize(14)
-            .fontColor('#8A94A6')
+            .fontSize(Font.body)
+            .fontColor(AppColor.textMuted)
             .textAlign(TextAlign.Center);
         }
         .width('100%')
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center);
       } else {
-        List({ space: 10 }) {
+        List({ space: Space.md }) {
           ForEach(this.items, (item: NotificationItem) => {
             ListItem() {
               this.noticeCard(item);
@@ -197,7 +206,7 @@ struct Messages {
     }
     .width('100%')
     .height('100%')
-    .padding(16)
-    .backgroundColor('#F5F7FB');
+    .padding(Space.lg)
+    .backgroundColor(AppColor.bg);
   }
 }

@@ -1,6 +1,9 @@
 {
   "src": [
     "pages/Index",
+    "pages/Search",
+    "pages/Trending",
+    "pages/DailyPostDetail",
     "pages/Detail",
     "pages/Login",
     "pages/CreatePost",

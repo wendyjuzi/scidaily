@@ -202,6 +202,8 @@ class PersonalCenterService {
         return this.collections;
       case 'likes':
         return this.likes;
+      case 'follows':
+        return [];
       case 'history':
         return this.history;
       default:
@@ -217,6 +219,8 @@ class PersonalCenterService {
         return '我的收藏';
       case 'likes':
         return '我的点赞';
+      case 'follows':
+        return '我的关注';
       case 'history':
         return '浏览记录';
       default:
@@ -319,6 +323,38 @@ class PersonalCenterService {
     }
   }
 
+  async isCollectedItem(itemId: string): Promise<boolean> {
+    return this.getItemState('collections', itemId);
+  }
+
+  async addCollectionItem(itemId: string, title: string, summary: string): Promise<void> {
+    await this.addActionItem('collections', itemId, title, summary);
+  }
+
+  async isLikedItem(itemId: string): Promise<boolean> {
+    return this.getItemState('likes', itemId);
+  }
+
+  async addLikeItem(itemId: string, title: string, summary: string): Promise<void> {
+    await this.addActionItem('likes', itemId, title, summary);
+  }
+
+  async isFollowingItem(itemId: string): Promise<boolean> {
+    return this.getItemState('follows', itemId);
+  }
+
+  async addFollowItem(itemId: string, title: string, summary: string): Promise<void> {
+    await this.addActionItem('follows', itemId, title, summary);
+  }
+
+  async addHistoryItem(itemId: string, title: string, summary: string): Promise<void> {
+    await this.addActionItem('history', itemId, title, summary);
+  }
+
+  async removeFollowItem(itemId: string): Promise<void> {
+    await this.removeActionItem('follows', itemId);
+  }
+
   async addLike(news: ResearchNews): Promise<void> {
     this.ensureLoggedIn();
     try {
@@ -358,6 +394,14 @@ class PersonalCenterService {
       }
       this.removeLocalItem(this.likes, newsId);
     }
+  }
+
+  async removeCollectionItem(itemId: string): Promise<void> {
+    await this.removeActionItem('collections', itemId);
+  }
+
+  async removeLikeItem(itemId: string): Promise<void> {
+    await this.removeActionItem('likes', itemId);
   }
 
   async addHistory(news: ResearchNews): Promise<void> {
@@ -498,10 +542,78 @@ class PersonalCenterService {
         return '/users/me/collections';
       case 'likes':
         return '/users/me/likes';
+      case 'follows':
+        return '/users/me/follows';
       case 'history':
         return '/users/me/history';
       default:
         return '/users/me/posts';
+    }
+  }
+
+  private pathForAction(type: string): string {
+    return `/users/me/${type}`;
+  }
+
+  private async getItemState(type: string, itemId: string): Promise<boolean> {
+    this.ensureLoggedIn();
+    try {
+      const response = await httpClient.request({
+        path: `${this.pathForAction(type)}/${itemId}/state`,
+        method: http.RequestMethod.GET,
+        token: authService.getToken()
+      });
+      return (JSON.parse(response) as InteractionStateDto).active;
+    } catch (error) {
+      if (!(error instanceof AppException) || error.code !== AppErrorCode.Network) {
+        if (error instanceof Error) {
+          throw error;
+        }
+        throw globalErrorHandler.network('交互状态加载失败。');
+      }
+      return false;
+    }
+  }
+
+  private async addActionItem(type: string, itemId: string, title: string, summary: string): Promise<void> {
+    this.ensureLoggedIn();
+    const payload: PersonalActionDto = {
+      item_id: itemId,
+      title,
+      summary
+    };
+    try {
+      await httpClient.request({
+        path: this.pathForAction(type),
+        method: http.RequestMethod.POST,
+        body: JSON.stringify(payload),
+        token: authService.getToken()
+      });
+    } catch (error) {
+      if (!(error instanceof AppException) || error.code !== AppErrorCode.Network) {
+        if (error instanceof Error) {
+          throw error;
+        }
+        throw globalErrorHandler.network('交互提交失败。');
+      }
+    }
+  }
+
+  private async removeActionItem(type: string, itemId: string): Promise<void> {
+    this.ensureLoggedIn();
+    try {
+      await httpClient.request({
+        path: `${this.pathForAction(type)}/${itemId}`,
+        method: http.RequestMethod.DELETE,
+        token: authService.getToken()
+      });
+    } catch (error) {
+      if (!(error instanceof AppException) || error.code !== AppErrorCode.Network) {
+        if (error instanceof Error) {
+          throw error;
+        }
+        throw globalErrorHandler.network('交互取消失败。');
+      }
     }
   }
 

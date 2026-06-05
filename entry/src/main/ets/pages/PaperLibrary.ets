@@ -1,6 +1,7 @@
 import { router } from '@kit.ArkUI';
 import { PaperItem } from '../models/Paper';
 import { paperService } from '../services/PaperService';
+import { AppColor, Space, Radius, Font, Elevation } from '../theme/AppTheme';
 
 @Entry
 @Component
@@ -38,59 +39,60 @@ struct PaperLibrary {
 
   @Builder
   private paperCard(item: PaperItem): void {
-    Column({ space: 10 }) {
+    Column({ space: Space.md }) {
       Row() {
         Text(item.categoryName)
-          .fontSize(12)
-          .fontColor('#007AFF')
-          .backgroundColor('#EAF4FF')
-          .borderRadius(12)
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 });
+          .fontSize(Font.small)
+          .fontColor(AppColor.accent)
+          .backgroundColor(AppColor.accentSoft)
+          .borderRadius(Radius.md)
+          .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs });
         Blank();
         Text(item.publishedAt)
-          .fontSize(11)
-          .fontColor('#8B8F98');
+          .fontSize(Font.caption)
+          .fontColor(AppColor.textMuted);
       }
       .width('100%');
       Text(item.title)
-        .fontSize(17)
+        .fontSize(Font.sub)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#111827')
+        .fontColor(AppColor.textTitle)
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%');
       Text(item.abstract)
-        .fontSize(13)
-        .fontColor('#5F6368')
+        .fontSize(Font.small)
+        .fontColor(AppColor.textSecondary)
         .lineHeight(20)
         .maxLines(3)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%');
       Text(item.authors.join(', '))
-        .fontSize(12)
-        .fontColor('#64748B')
+        .fontSize(Font.small)
+        .fontColor(AppColor.textSecondary)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%');
       Flex({ wrap: FlexWrap.Wrap }) {
         ForEach(item.tags, (tag: string) => {
           Text(`#${tag}`)
-            .fontSize(11)
-            .fontColor('#475569')
-            .backgroundColor('#F8FAFC')
-            .border({ width: 1, color: '#E2E8F0' })
-            .borderRadius(12)
-            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-            .margin({ right: 6, bottom: 6 });
+            .fontSize(Font.caption)
+            .fontColor(AppColor.textSecondary)
+            .backgroundColor(AppColor.surfaceSoft)
+            .border({ width: 1, color: AppColor.border })
+            .borderRadius(Radius.md)
+            .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
+            .margin({ right: Space.sm, bottom: Space.sm });
         }, (tag: string) => tag);
       }
       .width('100%');
       Button('阅读 PDF')
         .height(40)
         .width('100%')
-        .fontColor('#FFFFFF')
-        .backgroundColor('#007AFF')
-        .borderRadius(20)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(AppColor.textOnPrimary)
+        .backgroundColor(AppColor.primary)
+        .borderRadius(Radius.lg)
         .onClick(() => {
           router.pushUrl({
             url: 'pages/PDFReader',
@@ -99,31 +101,33 @@ struct PaperLibrary {
         });
     }
     .width('100%')
-    .padding(16)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(16)
-    .shadow({ radius: 18, color: '#0D000000', offsetY: 6 });
+    .padding(Space.lg)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: AppColor.border })
+    .shadow(Elevation.card);
   }
 
   build() {
-    Column({ space: 14 }) {
+    Column({ space: Space.lg }) {
       Row() {
         Button('返回')
           .height(34)
-          .fontSize(13)
-          .fontColor('#111827')
-          .backgroundColor('#FFFFFF')
-          .borderRadius(17)
+          .fontSize(Font.small)
+          .fontColor(AppColor.textBody)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
+          .borderRadius(Radius.lg)
           .onClick(() => {
             router.back();
           });
         Blank();
         Button('刷新')
           .height(34)
-          .fontSize(13)
-          .fontColor('#007AFF')
-          .backgroundColor('#EAF4FF')
-          .borderRadius(17)
+          .fontSize(Font.small)
+          .fontColor(AppColor.accent)
+          .backgroundColor(AppColor.accentSoft)
+          .borderRadius(Radius.lg)
           .onClick(() => {
             this.reload();
           });
@@ -131,21 +135,21 @@ struct PaperLibrary {
       .width('100%');
 
       Text('文献 PDF 库')
-        .fontSize(26)
+        .fontSize(Font.h1)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#111827')
+        .fontColor(AppColor.textTitle)
         .width('100%');
 
       Scroll() {
         if (this.loading) {
           Text('正在加载开放论文...')
-            .fontSize(14)
-            .fontColor('#8B8F98')
+            .fontSize(Font.body)
+            .fontColor(AppColor.textMuted)
             .width('100%')
             .textAlign(TextAlign.Center)
             .margin({ top: 96 });
         } else {
-          Column({ space: 14 }) {
+          Column({ space: Space.lg }) {
             ForEach(this.papers, (item: PaperItem) => {
               this.paperCard(item);
             }, (item: PaperItem) => item.id);
@@ -153,9 +157,9 @@ struct PaperLibrary {
               .height(42)
               .width('100%')
               .enabled(this.hasMore)
-              .fontColor(this.hasMore ? '#FFFFFF' : '#8B8F98')
-              .backgroundColor(this.hasMore ? '#007AFF' : '#E5E7EB')
-              .borderRadius(21)
+              .fontColor(this.hasMore ? AppColor.textOnPrimary : AppColor.textMuted)
+              .backgroundColor(this.hasMore ? AppColor.primary : AppColor.surfaceSoft)
+              .borderRadius(Radius.lg)
               .onClick(() => {
                 this.loadMore();
               });
@@ -167,7 +171,7 @@ struct PaperLibrary {
     }
     .width('100%')
     .height('100%')
-    .padding(14)
-    .backgroundColor('#F6F8FB');
+    .padding(Space.md)
+    .backgroundColor(AppColor.bg);
   }
 }

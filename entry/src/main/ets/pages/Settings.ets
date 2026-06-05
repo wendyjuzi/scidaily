@@ -2,6 +2,7 @@ import { router } from '@kit.ArkUI';
 import { authService } from '../services/AuthService';
 import { SettingsBundle } from '../models/User';
 import { personalCenterService } from '../services/PersonalCenterService';
+import { AppColor, Space, Radius, Font } from '../theme/AppTheme';
 
 @Entry
 @Component
@@ -69,15 +70,15 @@ struct Settings {
   @Builder
   private switchRow(title: string, subtitle: string, isOn: boolean, onChange: (value: boolean) => void): void {
     Row() {
-      Column({ space: 4 }) {
+      Column({ space: Space.xs }) {
         Text(title)
-          .fontSize(15)
+          .fontSize(Font.body)
           .fontWeight(FontWeight.Medium)
-          .fontColor('#1D2939')
+          .fontColor(AppColor.textTitle)
           .width('100%');
         Text(subtitle)
-          .fontSize(12)
-          .fontColor('#667085')
+          .fontSize(Font.small)
+          .fontColor(AppColor.textSecondary)
           .width('100%')
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis });
@@ -85,19 +86,25 @@ struct Settings {
       .layoutWeight(1);
 
       Toggle({ type: ToggleType.Switch, isOn: isOn })
+        .selectedColor(AppColor.primary)
         .onChange(onChange);
     }
     .width('100%')
-    .padding(14)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(10);
+    .padding(Space.lg)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.md)
+    .border({ width: 1, color: AppColor.border });
   }
 
   build() {
-    Column({ space: 14 }) {
+    Column({ space: Space.lg }) {
       Row() {
         Button('返回')
           .type(ButtonType.Capsule)
+          .fontSize(Font.body)
+          .fontColor(AppColor.textBody)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
           .onClick(() => {
             router.back();
           });
@@ -106,22 +113,24 @@ struct Settings {
       .width('100%');
 
       Text('设置')
-        .fontSize(26)
+        .fontSize(Font.h1)
         .fontWeight(FontWeight.Bold)
+        .fontColor(AppColor.textTitle)
         .width('100%');
 
       if (this.errorMessage.length > 0) {
         Text(this.errorMessage)
-          .fontSize(13)
-          .fontColor('#D92D20')
+          .fontSize(Font.small)
+          .fontColor(AppColor.danger)
           .width('100%');
       }
 
       Scroll() {
-        Column({ space: 14 }) {
+        Column({ space: Space.lg }) {
           Text('隐私设置')
-            .fontSize(16)
+            .fontSize(Font.sub)
             .fontWeight(FontWeight.Medium)
+            .fontColor(AppColor.textTitle)
             .width('100%');
           this.switchRow('展示邮箱', '允许其他用户查看个人资料中的邮箱。', this.showEmail, (value: boolean) => {
             this.showEmail = value;
@@ -137,10 +146,11 @@ struct Settings {
           });
 
           Text('消息设置')
-            .fontSize(16)
+            .fontSize(Font.sub)
             .fontWeight(FontWeight.Medium)
+            .fontColor(AppColor.textTitle)
             .width('100%')
-            .margin({ top: 8 });
+            .margin({ top: Space.sm });
           this.switchRow('点赞通知', '当日报被点赞时接收提醒。', this.likeNotice, (value: boolean) => {
             this.likeNotice = value;
             this.saveMessages();
@@ -155,13 +165,13 @@ struct Settings {
           });
         }
         .width('100%')
-        .padding({ bottom: 24 });
+        .padding({ bottom: Space.xxl });
       }
       .layoutWeight(1);
     }
     .width('100%')
     .height('100%')
-    .padding(16)
-    .backgroundColor('#F5F7FB');
+    .padding(Space.lg)
+    .backgroundColor(AppColor.bg);
   }
 }

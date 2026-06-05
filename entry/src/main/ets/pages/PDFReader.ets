@@ -2,6 +2,7 @@ import { router } from '@kit.ArkUI';
 import webview from '@ohos.web.webview';
 import { PaperItem } from '../models/Paper';
 import { paperService } from '../services/PaperService';
+import { AppColor, Space, Radius, Font } from '../theme/AppTheme';
 
 @Entry
 @Component
@@ -43,28 +44,29 @@ struct PDFReader {
   }
 
   build() {
-    Column({ space: 10 }) {
-      Row({ space: 8 }) {
+    Column({ space: Space.md }) {
+      Row({ space: Space.sm }) {
         Button('返回')
           .height(34)
-          .fontSize(13)
-          .fontColor('#111827')
-          .backgroundColor('#FFFFFF')
-          .borderRadius(17)
+          .fontSize(Font.small)
+          .fontColor(AppColor.textBody)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
+          .borderRadius(Radius.lg)
           .onClick(() => {
             router.back();
           });
         Column({ space: 2 }) {
           Text(this.paper !== undefined ? this.paper.title : 'PDF 阅读')
-            .fontSize(15)
+            .fontSize(Font.body)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#111827')
+            .fontColor(AppColor.textTitle)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%');
           Text(this.paper !== undefined ? this.paper.authors.join(', ') : '正在加载文献...')
-            .fontSize(11)
-            .fontColor('#64748B')
+            .fontSize(Font.caption)
+            .fontColor(AppColor.textSecondary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%');
@@ -75,8 +77,8 @@ struct PDFReader {
 
       if (this.pdfUrl.length === 0) {
         Text(this.statusText.length > 0 ? this.statusText : '正在加载 PDF...')
-          .fontSize(14)
-          .fontColor('#8B8F98')
+          .fontSize(Font.body)
+          .fontColor(AppColor.textMuted)
           .layoutWeight(1)
           .width('100%')
           .textAlign(TextAlign.Center);
@@ -84,37 +86,37 @@ struct PDFReader {
         Web({ src: this.pdfUrl, controller: this.controller })
           .layoutWeight(1)
           .width('100%')
-          .borderRadius(16);
+          .borderRadius(Radius.lg);
       }
 
-      Row({ space: 8 }) {
+      Row({ space: Space.sm }) {
         Button('标记 25%')
           .height(38)
           .layoutWeight(1)
-          .fontSize(12)
-          .fontColor('#007AFF')
-          .backgroundColor('#EAF4FF')
-          .borderRadius(19)
+          .fontSize(Font.small)
+          .fontColor(AppColor.accent)
+          .backgroundColor(AppColor.accentSoft)
+          .borderRadius(Radius.lg)
           .onClick(() => {
             this.saveProgress(0.25);
           });
         Button('标记 50%')
           .height(38)
           .layoutWeight(1)
-          .fontSize(12)
-          .fontColor('#007AFF')
-          .backgroundColor('#EAF4FF')
-          .borderRadius(19)
+          .fontSize(Font.small)
+          .fontColor(AppColor.accent)
+          .backgroundColor(AppColor.accentSoft)
+          .borderRadius(Radius.lg)
           .onClick(() => {
             this.saveProgress(0.5);
           });
         Button('已读完')
           .height(38)
           .layoutWeight(1)
-          .fontSize(12)
-          .fontColor('#FFFFFF')
-          .backgroundColor('#007AFF')
-          .borderRadius(19)
+          .fontSize(Font.small)
+          .fontColor(AppColor.textOnPrimary)
+          .backgroundColor(AppColor.primary)
+          .borderRadius(Radius.lg)
           .onClick(() => {
             this.saveProgress(1);
           });
@@ -123,15 +125,15 @@ struct PDFReader {
 
       if (this.statusText.length > 0) {
         Text(this.statusText)
-          .fontSize(12)
-          .fontColor('#64748B')
+          .fontSize(Font.small)
+          .fontColor(AppColor.textSecondary)
           .width('100%')
           .textAlign(TextAlign.Center);
       }
     }
     .width('100%')
     .height('100%')
-    .padding(12)
-    .backgroundColor('#F6F8FB');
+    .padding(Space.md)
+    .backgroundColor(AppColor.bg);
   }
 }

@@ -143,6 +143,16 @@ class AppStore:
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS user_follows (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS user_browsing_history (
                 id TEXT PRIMARY KEY,
                 user_id INTEGER NOT NULL,
@@ -1968,6 +1978,7 @@ class AppStore:
             "posts": "user_posts",
             "collections": "user_collections",
             "likes": "user_likes",
+            "follows": "user_follows",
             "history": "user_browsing_history",
         }
         if table_key not in table_map:

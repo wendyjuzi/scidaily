@@ -1,6 +1,7 @@
 import { router } from '@kit.ArkUI';
 import { UserProfile } from '../models/User';
 import { authService } from '../services/AuthService';
+import { AppColor, Space, Radius, Font } from '../theme/AppTheme';
 
 @Entry
 @Component
@@ -53,33 +54,39 @@ struct ProfileEdit {
 
   @Builder
   private inputRow(label: string, value: string, placeholder: string, change: (value: string) => void): void {
-    Column({ space: 6 }) {
+    Column({ space: Space.sm }) {
       Text(label)
-        .fontSize(13)
-        .fontColor('#667085')
+        .fontSize(Font.small)
+        .fontColor(AppColor.textSecondary)
         .width('100%');
       TextInput({ placeholder, text: value })
         .height(46)
-        .fontSize(15)
-        .backgroundColor('#FFFFFF')
-        .borderRadius(10)
+        .fontSize(Font.body)
+        .backgroundColor(AppColor.surface)
+        .border({ width: 1, color: AppColor.border })
+        .borderRadius(Radius.md)
         .onChange(change);
     }
     .width('100%');
   }
 
   build() {
-    Column({ space: 14 }) {
+    Column({ space: Space.lg }) {
       Row() {
         Button('返回')
           .type(ButtonType.Capsule)
+          .fontSize(Font.body)
+          .fontColor(AppColor.textBody)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
           .onClick(() => {
             router.back();
           });
         Blank();
         Button('保存')
           .type(ButtonType.Capsule)
-          .backgroundColor('#1E88E5')
+          .fontColor(AppColor.textOnPrimary)
+          .backgroundColor(AppColor.primary)
           .onClick(() => {
             this.save();
           });
@@ -87,12 +94,13 @@ struct ProfileEdit {
       .width('100%');
 
       Text('编辑资料')
-        .fontSize(26)
+        .fontSize(Font.h1)
         .fontWeight(FontWeight.Bold)
+        .fontColor(AppColor.textTitle)
         .width('100%');
 
       Scroll() {
-        Column({ space: 12 }) {
+        Column({ space: Space.md }) {
           this.inputRow('昵称', this.nickname, '请输入昵称', (value: string) => {
             this.nickname = value;
           });
@@ -109,16 +117,17 @@ struct ProfileEdit {
             this.researchField = value;
           });
 
-          Column({ space: 6 }) {
+          Column({ space: Space.sm }) {
             Text('个人简介')
-              .fontSize(13)
-              .fontColor('#667085')
+              .fontSize(Font.small)
+              .fontColor(AppColor.textSecondary)
               .width('100%');
             TextArea({ placeholder: '简单介绍一下你的科研方向', text: this.bio })
               .height(92)
-              .fontSize(15)
-              .backgroundColor('#FFFFFF')
-              .borderRadius(10)
+              .fontSize(Font.body)
+              .backgroundColor(AppColor.surface)
+              .border({ width: 1, color: AppColor.border })
+              .borderRadius(Radius.md)
               .onChange((value: string) => {
                 this.bio = value;
               });
@@ -127,19 +136,19 @@ struct ProfileEdit {
 
           if (this.errorMessage.length > 0) {
             Text(this.errorMessage)
-              .fontSize(13)
-              .fontColor('#D92D20')
+              .fontSize(Font.small)
+              .fontColor(AppColor.danger)
               .width('100%');
           }
         }
         .width('100%')
-        .padding({ bottom: 24 });
+        .padding({ bottom: Space.xxl });
       }
       .layoutWeight(1);
     }
     .width('100%')
     .height('100%')
-    .padding(16)
-    .backgroundColor('#F5F7FB');
+    .padding(Space.lg)
+    .backgroundColor(AppColor.bg);
   }
 }

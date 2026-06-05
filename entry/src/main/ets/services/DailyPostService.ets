@@ -175,6 +175,25 @@ class DailyPostService {
     }
   }
 
+  async getById(postId: string): Promise<DailyPost> {
+    try {
+      const response = await httpClient.request({
+        path: `/daily-posts/${postId}`,
+        method: http.RequestMethod.GET
+      });
+      return this.fromPostDto(JSON.parse(response) as DailyPostDto);
+    } catch (error) {
+      if (!(error instanceof AppException) || error.code !== AppErrorCode.Network) {
+        throw error as Error;
+      }
+      const match = this.localPosts.find((item: DailyPost) => item.id === postId);
+      if (match !== undefined) {
+        return match;
+      }
+      throw globalErrorHandler.network('日报详情加载失败。');
+    }
+  }
+
   async listMine(): Promise<DailyPost[]> {
     this.ensureLoggedIn();
     try {

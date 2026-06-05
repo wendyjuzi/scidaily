@@ -1,4 +1,4 @@
-﻿import { router } from '@kit.ArkUI';
+import { router } from '@kit.ArkUI';
 import { NotificationBundle } from '../models/Community';
 import { PaperItem } from '../models/Paper';
 import { ResearchNews } from '../models/ResearchNews';
@@ -10,6 +10,7 @@ import { newsService } from '../services/NewsService';
 import { dailyPostService } from '../services/DailyPostService';
 import { paperService } from '../services/PaperService';
 import { personalCenterService } from '../services/PersonalCenterService';
+import { AppColor, Space, Radius, Font, Elevation } from '../theme/AppTheme';
 
 @Entry
 @Component
@@ -51,6 +52,8 @@ struct Index {
   @State selectedTemplateId: string = '';
   @State detailPost: DailyPost | undefined = undefined;
   @State unreadCount: number = 0;
+  @State currentTab: number = 0;
+  @State likedPostIds: string[] = [];
   private tabsController: TabsController = new TabsController();
 
   aboutToAppear(): void {
@@ -184,6 +187,17 @@ struct Index {
       return 'https://images.unsplash.com/photo-1583912267550-d44c03f6df43?auto=format&fit=crop&w=900&q=80';
     }
     return 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=900&q=80';
+  }
+
+  private feedCoverUrl(post: DailyPost): string {
+    const url = post.coverUrl.trim();
+    if (post.title.includes('单细胞聚类参数对比') || url.includes('1581093458791-9d09f8d088f4')) {
+      return this.paperCoverUrl('bio');
+    }
+    if (url.length > 0 && url.startsWith('http')) {
+      return url;
+    }
+    return this.paperCoverUrl(post.categoryId);
   }
 
   private selectCategory(categoryId: string): void {
@@ -457,22 +471,282 @@ struct Index {
     return heights[index % heights.length];
   }
 
+  private initial(name: string): string {
+    return name.length > 0 ? name.substring(0, 1).toUpperCase() : '研';
+  }
+
+  private avatarColor(seed: string): string {
+    const palette: string[] = [AppColor.primary, AppColor.accent, AppColor.accentStrong, AppColor.series3, AppColor.primaryStrong];
+    let sum = 0;
+    for (let i = 0; i < seed.length; i++) {
+      sum += seed.charCodeAt(i);
+    }
+    return palette[sum % palette.length];
+  }
+
+  private hasRealAvatar(url: string): boolean {
+    return url.length > 0 && url.startsWith('http') && !url.includes('example.com');
+  }
+
+  private greetingTitle(): string {
+    if (this.currentUser !== undefined) {
+      return `Hi，${this.currentUser.nickname}`;
+    }
+    return '科研日报';
+  }
+
+  private feedLikeText(index: number): string {
+    const values: string[] = ['49', '61', '1.5万', '10', '84', '128'];
+    return values[index % values.length];
+  }
+
+  private isFeedLiked(postId: string): boolean {
+    return this.likedPostIds.includes(postId);
+  }
+
+  private openFeedPost(post: DailyPost): void {
+    if (post.id.startsWith('paper:')) {
+      router.pushUrl({
+        url: 'pages/PDFReader',
+        params: { paperId: post.id.substring(6) }
+      });
+      return;
+    }
+    router.pushUrl({
+      url: 'pages/DailyPostDetail',
+      params: { id: post.id }
+    });
+  }
+
+  private toggleFeedLike(post: DailyPost): void {
+    if (!authService.isLoggedIn()) {
+      router.pushUrl({ url: 'pages/Login' });
+      return;
+    }
+    if (this.isFeedLiked(post.id)) {
+      personalCenterService.removeLikeItem(post.id).then(() => {
+        this.likedPostIds = this.likedPostIds.filter((id: string) => id !== post.id);
+      }).catch((error: Error) => {
+        this.toastText = error.message;
+      });
+      return;
+    }
+    personalCenterService.addLikeItem(post.id, post.title, post.summary).then(() => {
+      this.likedPostIds = this.likedPostIds.concat([post.id]);
+    }).catch((error: Error) => {
+      this.toastText = error.message;
+    });
+  }
+
   @Builder
-  private tabLabel(title: string): void {
+  private topChannel(title: string, active: boolean): void {
+    Column({ space: Space.xs }) {
+      Text(title)
+        .fontSize(22)
+        .fontWeight(active ? FontWeight.Bold : FontWeight.Normal)
+        .fontColor(active ? AppColor.textTitle : AppColor.textMuted);
+      Column()
+        .width(active ? 36 : 0)
+        .height(4)
+        .backgroundColor(AppColor.accent)
+        .borderRadius(2);
+    }
+    .height(56)
+    .justifyContent(FlexAlign.Center);
+  }
+
+  @Builder
+  private feedFilterText(title: string, active: boolean, action: () => void): void {
     Text(title)
-      .fontSize(13)
-      .fontWeight(FontWeight.Medium);
+      .fontSize(18)
+      .fontWeight(active ? FontWeight.Bold : FontWeight.Normal)
+      .fontColor(active ? AppColor.textTitle : AppColor.textMuted)
+      .maxLines(1)
+      .onClick(action);
+  }
+
+  @Builder
+  private discoveryHeader(): void {
+    Row() {
+      Text('○')
+        .width(46)
+        .height(56)
+        .fontSize(34)
+        .fontColor(AppColor.textTitle)
+        .textAlign(TextAlign.Center);
+
+      Row({ space: 56 }) {
+        this.topChannel('关注', false);
+        this.topChannel('发现', true);
+      }
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center);
+
+      Text('⌕')
+        .width(46)
+        .height(56)
+        .fontSize(34)
+        .fontColor(AppColor.textTitle)
+        .textAlign(TextAlign.Center)
+        .onClick(() => {
+          router.pushUrl({ url: 'pages/Search' });
+        });
+    }
+    .width('100%')
+    .height(64)
+    .padding({ left: Space.sm, right: Space.sm })
+    .backgroundColor(AppColor.surface);
+  }
+
+  @Builder
+  private discoveryFilterBar(): void {
+    Scroll() {
+      Row({ space: 30 }) {
+        this.feedFilterText('推荐', this.selectedCategoryId === 'all' && this.selectedTagId.length === 0, () => {
+          this.selectCategory('all');
+        });
+        ForEach(this.categories.filter((item: TopicCategory) => item.id !== 'all'), (category: TopicCategory) => {
+          this.feedFilterText(category.name, this.selectedCategoryId === category.id, () => {
+            this.selectCategory(category.id);
+          });
+        }, (category: TopicCategory) => category.id);
+        Text('⌄')
+          .fontSize(22)
+          .fontColor(AppColor.textTitle);
+      }
+      .padding({ left: Space.lg, right: Space.xxl });
+    }
+    .width('100%')
+    .height(52)
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    .backgroundColor(AppColor.surface)
+    .border({ width: 1, color: AppColor.border });
+  }
+
+  @Builder
+  private avatarBadge(name: string, url: string, size: number): void {
+    if (this.hasRealAvatar(url)) {
+      Image(url)
+        .width(size)
+        .height(size)
+        .borderRadius(size / 2)
+        .objectFit(ImageFit.Cover)
+        .backgroundColor(AppColor.surfaceSoft);
+    } else {
+      Text(this.initial(name))
+        .width(size)
+        .height(size)
+        .borderRadius(size / 2)
+        .backgroundColor(this.avatarColor(name))
+        .fontColor(AppColor.textOnPrimary)
+        .fontSize(size * 0.42)
+        .fontWeight(FontWeight.Medium)
+        .textAlign(TextAlign.Center);
+    }
+  }
+
+  @Builder
+  private statCell(label: string, value: number, action: () => void): void {
+    Column({ space: 3 }) {
+      Text(value.toString())
+        .fontSize(Font.title)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(AppColor.textTitle);
+      Text(label)
+        .fontSize(Font.caption)
+        .fontColor(AppColor.textMuted);
+    }
+    .layoutWeight(1)
+    .onClick(action);
+  }
+
+  @Builder
+  private statDivider(): void {
+    Column()
+      .width(1)
+      .height(26)
+      .backgroundColor(AppColor.border);
+  }
+
+  @Builder
+  private menuRow(icon: string, title: string, badge: number, action: () => void): void {
+    Row({ space: Space.md }) {
+      Text(icon)
+        .fontSize(Font.sub)
+        .fontColor(AppColor.accent)
+        .width(36)
+        .height(36)
+        .textAlign(TextAlign.Center)
+        .backgroundColor(AppColor.accentSoft)
+        .borderRadius(Radius.md);
+      Text(title)
+        .fontSize(Font.body)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(AppColor.textBody)
+        .layoutWeight(1);
+      if (badge > 0) {
+        Text(badge.toString())
+          .fontSize(Font.caption)
+          .fontColor(AppColor.textOnPrimary)
+          .backgroundColor(AppColor.danger)
+          .borderRadius(Radius.pill)
+          .padding({ left: 7, right: 7, top: 2, bottom: 2 });
+      }
+      Text('›')
+        .fontSize(Font.title)
+        .fontColor(AppColor.textMuted);
+    }
+    .width('100%')
+    .height(52)
+    .padding({ left: Space.md, right: Space.md })
+    .onClick(action);
+  }
+
+  @Builder
+  private tabBarItem(title: string, index: number): void {
+    if (index === 1) {
+      Column() {
+        Text('+')
+          .width(58)
+          .height(42)
+          .fontSize(34)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.textOnPrimary)
+          .textAlign(TextAlign.Center)
+          .backgroundColor(AppColor.primary)
+          .borderRadius(12);
+      }
+      .height(58)
+      .justifyContent(FlexAlign.Center);
+    } else {
+      Column({ space: Space.xs }) {
+        Text(title)
+          .fontSize(22)
+          .fontWeight(this.currentTab === index ? FontWeight.Bold : FontWeight.Normal)
+          .fontColor(this.currentTab === index ? AppColor.textTitle : AppColor.textMuted);
+        Column()
+          .width(this.currentTab === index ? 34 : 0)
+          .height(3)
+          .backgroundColor(AppColor.accent)
+          .borderRadius(2);
+      }
+      .height(58)
+      .justifyContent(FlexAlign.Center);
+    }
   }
 
   @Builder
   private categoryChip(category: TopicCategory): void {
     Button(category.name)
       .height(34)
-      .fontSize(13)
-      .fontColor(this.selectedCategoryId === category.id ? '#FFFFFF' : '#2B2B2B')
-      .backgroundColor(this.selectedCategoryId === category.id ? '#007AFF' : '#FFFFFF')
-      .borderRadius(17)
-      .padding({ left: 14, right: 14 })
+      .fontSize(Font.small)
+      .fontWeight(this.selectedCategoryId === category.id ? FontWeight.Medium : FontWeight.Normal)
+      .fontColor(this.selectedCategoryId === category.id ? AppColor.textOnPrimary : AppColor.textBody)
+      .backgroundColor(this.selectedCategoryId === category.id ? AppColor.primary : AppColor.surface)
+      .border({ width: 1, color: this.selectedCategoryId === category.id ? AppColor.primary : AppColor.border })
+      .borderRadius(Radius.lg)
+      .padding({ left: Space.lg, right: Space.lg })
       .onClick(() => {
         this.selectCategory(category.id);
       });
@@ -482,11 +756,11 @@ struct Index {
   private tagChip(tag: TopicTag, active: boolean): void {
     Button(`#${tag.name}`)
       .height(30)
-      .fontSize(12)
-      .fontColor(active ? '#007AFF' : '#555555')
-      .backgroundColor(active ? '#EAF4FF' : '#F1F5F9')
-      .borderRadius(15)
-      .padding({ left: 12, right: 12 })
+      .fontSize(Font.small)
+      .fontColor(active ? AppColor.accentStrong : AppColor.textSecondary)
+      .backgroundColor(active ? AppColor.accentSoft : AppColor.surfaceSoft)
+      .borderRadius(Radius.md)
+      .padding({ left: Space.md, right: Space.md })
       .onClick(() => {
         this.selectTag(tag.id);
       });
@@ -494,138 +768,137 @@ struct Index {
 
   @Builder
   private skeletonCard(height: number): void {
-    Column({ space: 10 }) {
+    Column({ space: Space.md }) {
       Text('')
         .height(height)
         .width('100%')
-        .backgroundColor('#ECEFF3')
-        .borderRadius({ topLeft: 16, topRight: 16 });
+        .backgroundColor(AppColor.surfaceSoft)
+        .borderRadius({ topLeft: Radius.lg, topRight: Radius.lg });
       Text('')
         .height(18)
         .width('86%')
-        .backgroundColor('#ECEFF3')
-        .borderRadius(6);
+        .backgroundColor(AppColor.surfaceSoft)
+        .borderRadius(Radius.sm);
       Text('')
         .height(14)
         .width('62%')
-        .backgroundColor('#ECEFF3')
-        .borderRadius(6);
+        .backgroundColor(AppColor.surfaceSoft)
+        .borderRadius(Radius.sm);
     }
     .width('100%')
-    .padding(10)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(16);
+    .padding(Space.md)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: AppColor.border });
   }
 
   @Builder
   private waterfallCard(post: DailyPost, index: number): void {
-    Column({ space: 10 }) {
-      Image(post.coverUrl)
+    Column({ space: Space.sm }) {
+      Image(this.feedCoverUrl(post))
         .width('100%')
         .height(this.cardImageHeight(index))
         .objectFit(ImageFit.Cover)
-        .borderRadius({ topLeft: 16, topRight: 16 });
-      Column({ space: 8 }) {
-        Text(post.title)
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#202124')
+        .borderRadius({ topLeft: Radius.sm, topRight: Radius.sm });
+
+      Text(post.title)
+        .fontSize(Font.sub)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(AppColor.textTitle)
+        .lineHeight(22)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+        .padding({ left: Space.sm, right: Space.sm });
+
+      if (post.summary.length > 0) {
+        Text(post.summary)
+          .fontSize(Font.small)
+          .fontColor(AppColor.textSecondary)
+          .lineHeight(18)
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%');
-        Text(post.summary)
-          .fontSize(12)
-          .fontColor('#60646C')
-          .lineHeight(19)
-          .maxLines(3)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%');
-        Row({ space: 6 }) {
-          Text(post.categoryName)
-            .fontSize(11)
-            .fontColor('#007AFF');
-          Blank();
-          Text(post.authorName)
-            .fontSize(11)
-            .fontColor('#8B8F98')
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis });
-        }
-        .width('100%');
-        if (post.tags.length > 0) {
-          Text(`#${post.tags[0]}`)
-            .fontSize(11)
-            .fontColor('#475569')
-            .backgroundColor('#F8FAFC')
-            .border({ width: 1, color: '#E2E8F0' })
-            .borderRadius(12)
-            .padding({ left: 8, right: 8, top: 4, bottom: 4 });
-        }
+          .width('100%')
+          .padding({ left: Space.sm, right: Space.sm });
       }
-      .padding({ left: 14, right: 14, bottom: 14 });
+
+      Row({ space: Space.xs }) {
+        this.avatarBadge(post.authorName, '', 22);
+        Text(post.authorName)
+          .fontSize(Font.caption)
+          .fontColor(AppColor.textSecondary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1);
+        Text(this.isFeedLiked(post.id) ? '♥' : '♡')
+          .fontSize(Font.title)
+          .fontColor(this.isFeedLiked(post.id) ? AppColor.accent : AppColor.textMuted)
+          .onClick(() => {
+            this.toggleFeedLike(post);
+          });
+        Text(this.feedLikeText(index))
+          .fontSize(Font.caption)
+          .fontColor(AppColor.textSecondary);
+      }
+      .width('100%')
+      .padding({ left: Space.sm, right: Space.sm, bottom: Space.sm })
+      .alignItems(VerticalAlign.Center);
     }
     .width('100%')
-    .backgroundColor('#FFFFFF')
-    .borderRadius(16)
-    .shadow({ radius: 18, color: '#0D000000', offsetY: 6 })
+    .clip(true)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.sm)
     .onClick(() => {
-      if (post.id.startsWith('paper:')) {
-        router.pushUrl({
-          url: 'pages/PDFReader',
-          params: { paperId: post.id.substring(6) }
-        });
-        return;
-      }
-      this.detailPost = post;
+      this.openFeedPost(post);
     });
   }
 
   @Builder
   private detailPanel(post: DailyPost): void {
-    Column({ space: 12 }) {
+    Column({ space: Space.md }) {
       Row() {
         Text(post.title)
-          .fontSize(16)
+          .fontSize(Font.sub)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#111111')
+          .fontColor(AppColor.textTitle)
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1);
         Button('关闭')
           .height(28)
-          .fontSize(11)
-          .fontColor('#007AFF')
-          .backgroundColor('#EAF4FF')
-          .borderRadius(14)
+          .fontSize(Font.caption)
+          .fontColor(AppColor.primary)
+          .backgroundColor(AppColor.primarySoft)
+          .borderRadius(Radius.md)
           .onClick(() => {
             this.detailPost = undefined;
           });
       }
       .width('100%');
-      Image(post.coverUrl)
+      Image(this.feedCoverUrl(post))
         .width('100%')
         .height(170)
         .objectFit(ImageFit.Cover)
-        .borderRadius(10);
+        .borderRadius(Radius.md);
       Text(post.summary)
-        .fontSize(13)
-        .fontColor('#5F6368')
+        .fontSize(Font.small)
+        .fontColor(AppColor.textSecondary)
         .lineHeight(20)
         .width('100%');
       Text(post.content)
-        .fontSize(14)
-        .fontColor('#202124')
+        .fontSize(Font.body)
+        .fontColor(AppColor.textBody)
         .lineHeight(22)
         .width('100%');
       if (post.imageUrls.length > 0) {
         Scroll() {
-          Row({ space: 8 }) {
+          Row({ space: Space.sm }) {
             ForEach(post.imageUrls, (url: string) => {
               Image(url)
                 .width(110)
                 .height(82)
                 .objectFit(ImageFit.Cover)
-                .borderRadius(8);
+                .borderRadius(Radius.sm);
             }, (url: string) => url);
           }
         }
@@ -636,171 +909,135 @@ struct Index {
       Flex({ wrap: FlexWrap.Wrap }) {
         ForEach(post.tags, (tag: string) => {
           Text(`#${tag}`)
-            .fontSize(11)
-            .fontColor('#007AFF')
-            .backgroundColor('#EAF4FF')
-            .borderRadius(12)
-            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-            .margin({ right: 6, bottom: 6 });
+            .fontSize(Font.caption)
+            .fontColor(AppColor.accentStrong)
+            .backgroundColor(AppColor.accentSoft)
+            .borderRadius(Radius.md)
+            .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
+            .margin({ right: Space.sm, bottom: Space.sm });
         }, (tag: string) => tag);
       }
       .width('100%');
     }
     .width('100%')
-    .padding(16)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(16)
-    .shadow({ radius: 18, color: '#0D000000', offsetY: 6 });
+    .padding(Space.lg)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: AppColor.border })
+    .shadow(Elevation.card);
   }
 
   @Builder
   private feedTab(): void {
-    Column({ space: 14 }) {
-      Row() {
-        Text('科研日报')
-          .fontSize(24)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#111111');
-        Blank();
-        Button('↻')
-          .height(32)
-          .width(32)
-          .fontSize(18)
-          .fontColor('#007AFF')
-          .backgroundColor('#00000000')
-          .borderRadius(16)
-          .onClick(() => {
-            this.refreshFeed();
-          });
-      }
-      .width('100%');
-
+    Column() {
+      this.discoveryHeader();
+      this.discoveryFilterBar();
       Scroll() {
-        Row({ space: 8 }) {
-          ForEach(this.categories, (category: TopicCategory) => {
-            this.categoryChip(category);
-          }, (category: TopicCategory) => category.id);
-        }
-        .padding({ right: 16 });
-      }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .height(42);
-
-      Scroll() {
-        Row({ space: 8 }) {
-          ForEach(this.tags, (tag: TopicTag) => {
-            this.tagChip(tag, this.selectedTagId === tag.id);
-          }, (tag: TopicTag) => tag.id);
-        }
-      }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .height(38);
-
-      if (this.detailPost !== undefined) {
-        this.detailPanel(this.detailPost);
-      }
-
-      Scroll() {
-        if (this.loading) {
-          Row({ space: 14 }) {
-            Column({ space: 14 }) {
-              this.skeletonCard(150);
-              this.skeletonCard(210);
-            }
-            .layoutWeight(1);
-            Column({ space: 14 }) {
-              this.skeletonCard(200);
-              this.skeletonCard(140);
-            }
-            .layoutWeight(1);
-          }
-          .width('100%');
-        } else if (this.posts.length === 0) {
-          Column({ space: 10 }) {
-            Text('暂无匹配日报')
-              .fontSize(18)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#333333');
-            Text('换一个话题标签，或者去创作页发布第一篇科研日报。')
-              .fontSize(13)
-              .fontColor('#777777')
-              .textAlign(TextAlign.Center);
-          }
-          .width('100%')
-          .height(260)
-          .justifyContent(FlexAlign.Center);
-        } else {
-          Column({ space: 16 }) {
-            Row({ space: 14 }) {
-              Column({ space: 14 }) {
-                ForEach(this.leftPosts, (post: DailyPost, index: number) => {
-                  this.waterfallCard(post, index);
-                }, (post: DailyPost) => post.id);
+        Column({ space: Space.md }) {
+          if (this.loading) {
+            Row({ space: Space.sm }) {
+              Column({ space: Space.sm }) {
+                this.skeletonCard(150);
+                this.skeletonCard(210);
               }
               .layoutWeight(1);
-              Column({ space: 14 }) {
-                ForEach(this.rightPosts, (post: DailyPost, index: number) => {
-                  this.waterfallCard(post, index + 3);
-                }, (post: DailyPost) => post.id);
+              Column({ space: Space.sm }) {
+                this.skeletonCard(200);
+                this.skeletonCard(140);
               }
               .layoutWeight(1);
             }
             .width('100%');
-            Button(this.hasMore ? (this.refreshing ? '加载中...' : '上拉加载更多') : '已经到底了')
-              .height(42)
+          } else if (this.posts.length === 0) {
+            Column({ space: Space.md }) {
+              Text('暂无匹配日报')
+                .fontSize(Font.title)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(AppColor.textTitle);
+              Text('换一个话题标签，或者去创作页发布第一篇科研日报。')
+                .fontSize(Font.small)
+                .fontColor(AppColor.textSecondary)
+                .textAlign(TextAlign.Center);
+            }
+            .width('100%')
+            .height(260)
+            .justifyContent(FlexAlign.Center);
+          } else {
+            Column({ space: Space.md }) {
+              Row({ space: Space.sm }) {
+                Column({ space: Space.sm }) {
+                  ForEach(this.leftPosts, (post: DailyPost, index: number) => {
+                    this.waterfallCard(post, index);
+                  }, (post: DailyPost) => post.id);
+                }
+                .layoutWeight(1);
+                Column({ space: Space.sm }) {
+                  ForEach(this.rightPosts, (post: DailyPost, index: number) => {
+                    this.waterfallCard(post, index + 3);
+                  }, (post: DailyPost) => post.id);
+                }
+                .layoutWeight(1);
+              }
               .width('100%')
-              .enabled(this.hasMore && !this.refreshing)
-              .fontColor(this.hasMore ? '#FFFFFF' : '#8B8F98')
-              .backgroundColor(this.hasMore ? '#007AFF' : '#E5E7EB')
-              .borderRadius(21)
-              .onClick(() => {
-                this.loadMore();
-              });
+              .alignItems(VerticalAlign.Top);
+
+              Button(this.hasMore ? (this.refreshing ? '加载中...' : '上拉加载更多') : '已经到底了')
+                .height(42)
+                .width('100%')
+                .enabled(this.hasMore && !this.refreshing)
+                .fontColor(this.hasMore ? AppColor.textOnPrimary : AppColor.textMuted)
+                .backgroundColor(this.hasMore ? AppColor.primary : AppColor.surfaceSoft)
+                .borderRadius(Radius.lg)
+                .onClick(() => {
+                  this.loadMore();
+                });
+            }
+          }
+
+          if (this.toastText.length > 0) {
+            Text(this.toastText)
+              .fontSize(Font.small)
+              .fontColor(AppColor.textBody)
+              .maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .width('100%')
+              .padding(Space.md)
+              .backgroundColor(AppColor.surface)
+              .borderRadius(Radius.md)
+              .border({ width: 1, color: AppColor.border });
           }
         }
+        .width('100%')
+        .padding({ left: Space.sm, right: Space.sm, bottom: Space.md });
       }
       .layoutWeight(1)
-      .scrollBar(BarState.Off);
-
-      if (this.toastText.length > 0) {
-        Text(this.toastText)
-          .fontSize(12)
-          .fontColor('#5F6368')
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-          .padding(10)
-          .backgroundColor('#FFFFFF')
-          .borderRadius(10);
-      }
+      .scrollBar(BarState.Off)
+      .backgroundColor(AppColor.bg);
     }
     .width('100%')
     .height('100%')
-    .padding({ left: 12, right: 12, top: 14, bottom: 8 })
-    .backgroundColor('#F6F8FB');
+    .backgroundColor(AppColor.bg);
   }
 
   @Builder
   private templateCard(template: DailyTemplate): void {
-    Column({ space: 8 }) {
+    Column({ space: Space.sm }) {
       Text(template.title)
-        .fontSize(14)
+        .fontSize(Font.body)
         .fontWeight(FontWeight.Bold)
-        .fontColor(this.selectedTemplateId === template.id ? '#007AFF' : '#222222');
+        .fontColor(this.selectedTemplateId === template.id ? AppColor.accentStrong : AppColor.textTitle);
       Text(template.description)
-        .fontSize(11)
-        .fontColor('#6B7280')
+        .fontSize(Font.caption)
+        .fontColor(AppColor.textSecondary)
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis });
     }
     .width(148)
     .height(96)
-    .padding(14)
-    .backgroundColor(this.selectedTemplateId === template.id ? '#EAF4FF' : '#FFFFFF')
-    .border({ width: 1, color: this.selectedTemplateId === template.id ? '#B7D8FF' : '#E5E7EB' })
-    .borderRadius(16)
+    .padding(Space.lg)
+    .backgroundColor(this.selectedTemplateId === template.id ? AppColor.accentSoft : AppColor.surface)
+    .border({ width: 1, color: this.selectedTemplateId === template.id ? AppColor.accent : AppColor.border })
+    .borderRadius(Radius.lg)
     .onClick(() => {
       this.applyTemplate(template);
     });
@@ -808,42 +1045,44 @@ struct Index {
 
   @Builder
   private createActionCard(title: string, subtitle: string, buttonText: string, targetUrl: string): void {
-    Column({ space: 10 }) {
+    Column({ space: Space.md }) {
       Text(title)
-        .fontSize(20)
+        .fontSize(Font.h2)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#111827')
+        .fontColor(AppColor.textTitle)
         .width('100%');
       Text(subtitle)
-        .fontSize(13)
-        .fontColor('#64748B')
+        .fontSize(Font.body)
+        .fontColor(AppColor.textSecondary)
         .lineHeight(20)
         .width('100%');
       Button(buttonText)
         .height(44)
         .width('100%')
-        .fontColor('#FFFFFF')
-        .backgroundColor('#007AFF')
-        .borderRadius(22)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(AppColor.textOnPrimary)
+        .backgroundColor(AppColor.primary)
+        .borderRadius(Radius.lg)
         .onClick(() => {
           router.pushUrl({ url: targetUrl });
         });
     }
     .width('100%')
-    .padding(16)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(16)
-    .shadow({ radius: 18, color: '#0D000000', offsetY: 6 });
+    .padding(Space.lg)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: AppColor.border })
+    .shadow(Elevation.card);
   }
 
   @Builder
   private editorTab(): void {
     Scroll() {
-      Column({ space: 16 }) {
+      Column({ space: Space.lg }) {
         Text('创作')
-          .fontSize(26)
+          .fontSize(Font.h1)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#111827')
+          .fontColor(AppColor.textTitle)
           .width('100%');
 
         this.createActionCard(
@@ -853,299 +1092,263 @@ struct Index {
           'pages/CreatePost'
         );
 
-        Row({ space: 12 }) {
-          Button('文献 PDF 库')
-            .height(44)
-            .layoutWeight(1)
-            .fontColor('#007AFF')
-            .backgroundColor('#EAF4FF')
-            .borderRadius(22)
-            .onClick(() => {
-              router.pushUrl({ url: 'pages/PaperLibrary' });
-            });
-          Button('话题广场')
-            .height(44)
-            .layoutWeight(1)
-            .fontColor('#374151')
-            .backgroundColor('#F3F4F6')
-            .borderRadius(22)
-            .onClick(() => {
-              this.tabsController.changeIndex(2);
-            });
-        }
-        .width('100%');
+        Button('文献 PDF 库')
+          .height(44)
+          .width('100%')
+          .fontColor(AppColor.accentStrong)
+          .backgroundColor(AppColor.accentSoft)
+          .borderRadius(Radius.lg)
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/PaperLibrary' });
+          });
 
         if (this.myPosts.length > 0) {
           Text('我的日报')
-            .fontSize(18)
+            .fontSize(Font.title)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#111827')
+            .fontColor(AppColor.textTitle)
             .width('100%');
           ForEach(this.myPosts, (post: DailyPost) => {
-            Row({ space: 10 }) {
-              Column({ space: 4 }) {
+            Row({ space: Space.md }) {
+              Column({ space: Space.xs }) {
                 Text(post.title)
-                  .fontSize(15)
+                  .fontSize(Font.body)
                   .fontWeight(FontWeight.Bold)
-                  .fontColor('#111827')
+                  .fontColor(AppColor.textTitle)
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
                   .width('100%');
                 Text(post.status === 'published' ? '已发布' : '草稿')
-                  .fontSize(12)
-                  .fontColor(post.status === 'published' ? '#007AFF' : '#8B8F98');
+                  .fontSize(Font.small)
+                  .fontColor(post.status === 'published' ? AppColor.accent : AppColor.textMuted);
               }
               .layoutWeight(1);
               Button('删除')
                 .height(32)
-                .fontSize(12)
-                .fontColor('#007AFF')
-                .backgroundColor('#EAF4FF')
-                .borderRadius(16)
+                .fontSize(Font.small)
+                .fontColor(AppColor.danger)
+                .backgroundColor(AppColor.dangerSoft)
+                .borderRadius(Radius.md)
                 .onClick(() => {
                   this.deletePost(post.id);
                 });
             }
             .width('100%')
-            .padding(14)
-            .backgroundColor('#FFFFFF')
-            .borderRadius(16);
+            .padding(Space.md)
+            .backgroundColor(AppColor.surface)
+            .borderRadius(Radius.lg)
+            .border({ width: 1, color: AppColor.border });
           }, (post: DailyPost) => post.id);
         }
       }
       .width('100%')
-      .padding({ left: 14, right: 14, top: 16, bottom: 28 });
+      .padding({ left: Space.md, right: Space.md, top: Space.lg, bottom: Space.xxl });
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F6F8FB');
+    .backgroundColor(AppColor.bg);
   }
-  @Builder
-  private topicsTab(): void {
-    Scroll() {
-      Column({ space: 12 }) {
-        Text('科研话题')
-          .fontSize(24)
-          .fontWeight(FontWeight.Bold)
-          .width('100%');
-        Row({ space: 8 }) {
-          TextInput({ placeholder: '新增学科分类，例如 计算化学', text: this.newCategoryName })
-            .height(42)
-            .backgroundColor('#FFFFFF')
-            .borderRadius(10)
-            .layoutWeight(1)
-            .onChange((value: string) => {
-              this.newCategoryName = value;
-            });
-          Button('新增分类')
-            .height(42)
-            .fontSize(12)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#007AFF')
-            .borderRadius(21)
-            .onClick(() => {
-              this.addTopicCategory();
-            });
-        }
-        .width('100%');
-
-        Row({ space: 8 }) {
-          TextInput({ placeholder: '自定义添加科研标签', text: this.newTagName })
-            .height(42)
-            .backgroundColor('#FFFFFF')
-            .borderRadius(10)
-            .layoutWeight(1)
-            .onChange((value: string) => {
-              this.newTagName = value;
-            });
-          Button('添加')
-            .height(42)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#007AFF')
-            .borderRadius(21)
-            .onClick(() => {
-              this.addTopicTag();
-            });
-        }
-        .width('100%');
-
-        ForEach(this.categories.filter((item: TopicCategory) => item.id !== 'all'), (category: TopicCategory) => {
-          Column({ space: 8 }) {
-            Row() {
-              Column({ space: 3 }) {
-                Text(category.name)
-                  .fontSize(17)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor('#202124');
-                Text(category.description)
-                  .fontSize(12)
-                  .fontColor('#6B7280')
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis });
-              }
-              .layoutWeight(1);
-              Text(`${category.postCount}篇`)
-                .fontSize(12)
-                .fontColor('#007AFF');
-            }
-            .width('100%');
-            Flex({ wrap: FlexWrap.Wrap }) {
-              ForEach(this.tags.filter((tag: TopicTag) => tag.categoryId === category.id), (tag: TopicTag) => {
-                Row({ space: 4 }) {
-                  Button(`#${tag.name} ${tag.postCount}`)
-                    .height(32)
-                    .fontSize(12)
-                    .fontColor(this.selectedTagId === tag.id ? '#FFFFFF' : '#333333')
-                    .backgroundColor(this.selectedTagId === tag.id ? '#007AFF' : '#F1F5F9')
-                    .borderRadius(16)
-                    .onClick(() => {
-                      router.pushUrl({
-                        url: 'pages/TopicDetail',
-                        params: {
-                          tagId: tag.id,
-                          tagName: tag.name,
-                          categoryName: category.name
-                        }
-                      });
-                    });
-                  Button('x')
-                    .width(30)
-                    .height(30)
-                    .fontSize(14)
-                    .fontColor('#007AFF')
-                    .backgroundColor('#EAF4FF')
-                    .borderRadius(15)
-                    .onClick(() => {
-                      this.deleteTopicTag(tag);
-                    });
-                }
-                .margin({ right: 8, bottom: 8 });
-              }, (tag: TopicTag) => tag.id);
-            }
-            .width('100%');
-          }
-          .width('100%')
-          .padding(14)
-          .backgroundColor('#FFFFFF')
-          .borderRadius(12);
-        }, (category: TopicCategory) => category.id);
-      }
-      .padding({ left: 12, right: 12, top: 14, bottom: 24 });
+  private profileSubtitle(): string {
+    if (this.currentUser === undefined) {
+      return '';
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor('#F6F8FB');
+    const institution = this.currentUser.institution;
+    const field = this.currentUser.researchField;
+    if (institution.length > 0 && field.length > 0) {
+      return `${institution} · ${field}`;
+    }
+    if (institution.length > 0) {
+      return institution;
+    }
+    if (field.length > 0) {
+      return field;
+    }
+    return '完善资料，展示你的研究方向';
   }
 
   @Builder
   private profileTab(): void {
-    Column({ space: 14 }) {
-      Text('我的')
-        .fontSize(24)
-        .fontWeight(FontWeight.Bold)
-        .width('100%');
-      if (this.currentUser) {
-        Column({ space: 8 }) {
-          Text(this.currentUser.nickname)
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .width('100%');
-          Text(this.currentUser.researchField.length > 0 ? this.currentUser.researchField : '未设置研究方向')
-            .fontSize(13)
-            .fontColor('#6B7280')
-            .width('100%');
-          Row({ space: 8 }) {
-            this.statTile('发布', this.profileStats.postCount);
-            this.statTile('收藏', this.profileStats.collectionCount);
-            this.statTile('点赞', this.profileStats.likeCount);
-            this.statTile('连续', this.profileStats.continuousDays);
-          }
-          .width('100%');
-        }
-        .width('100%')
-        .padding(14)
-        .backgroundColor('#FFFFFF')
-        .borderRadius(12);
-        Button('科研数据看板')
-          .height(44)
-          .width('100%')
-          .backgroundColor('#FFFFFF')
-          .fontColor('#111111')
-          .borderRadius(22)
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/ResearchDashboard' });
-          });
-        Button('文献 PDF 库')
-          .height(44)
-          .width('100%')
-          .backgroundColor('#FFFFFF')
-          .fontColor('#111111')
-          .borderRadius(22)
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/PaperLibrary' });
-          });
-        Button(this.unreadCount > 0 ? `消息通知（${this.unreadCount}）` : '消息通知')
-          .height(44)
-          .width('100%')
-          .backgroundColor(this.unreadCount > 0 ? '#EEF6FF' : '#FFFFFF')
-          .fontColor(this.unreadCount > 0 ? '#007AFF' : '#111111')
-          .borderRadius(22)
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/Messages' });
-          });
-        Button('账号设置')
-          .height(44)
-          .width('100%')
-          .backgroundColor('#FFFFFF')
-          .fontColor('#111111')
-          .borderRadius(22)
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/Settings' });
-          });
-      } else {
-        Column({ space: 12 }) {
-          Text('登录后可保存草稿、发布日报、管理标签')
-            .fontSize(15)
-            .fontColor('#555555')
-            .textAlign(TextAlign.Center);
-          Button('登录 / 注册')
-            .height(44)
+    Scroll() {
+      Column({ space: Space.lg }) {
+        if (this.currentUser) {
+          Column({ space: Space.lg }) {
+            Row({ space: Space.lg }) {
+              if (this.hasRealAvatar(this.currentUser.avatarUrl)) {
+                Image(this.currentUser.avatarUrl)
+                  .width(64)
+                  .height(64)
+                  .borderRadius(32)
+                  .objectFit(ImageFit.Cover)
+                  .border({ width: 2, color: AppColor.glassStrong });
+              } else {
+                Text(this.initial(this.currentUser.nickname))
+                  .width(64)
+                  .height(64)
+                  .borderRadius(32)
+                  .backgroundColor(AppColor.glass)
+                  .border({ width: 2, color: AppColor.glassStrong })
+                  .fontColor(AppColor.textOnPrimary)
+                  .fontSize(26)
+                  .fontWeight(FontWeight.Bold)
+                  .textAlign(TextAlign.Center);
+              }
+              Column({ space: Space.xs }) {
+                Text(this.currentUser.nickname)
+                  .fontSize(Font.h2)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(AppColor.textOnPrimary)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .width('100%');
+                Text(this.profileSubtitle())
+                  .fontSize(Font.small)
+                  .fontColor(AppColor.onHeroSoft)
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .width('100%');
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start);
+
+              Button('编辑')
+                .height(32)
+                .fontSize(Font.small)
+                .fontColor(AppColor.textOnPrimary)
+                .backgroundColor(AppColor.glass)
+                .borderRadius(Radius.pill)
+                .onClick(() => {
+                  router.pushUrl({ url: 'pages/ProfileEdit' });
+                });
+            }
             .width('100%')
-            .fontColor('#FFFFFF')
-            .backgroundColor('#007AFF')
-            .borderRadius(22)
-            .onClick(() => {
-              router.pushUrl({ url: 'pages/Login' });
+            .alignItems(VerticalAlign.Top);
+
+            if (this.currentUser.bio.length > 0) {
+              Text(this.currentUser.bio)
+                .fontSize(Font.small)
+                .fontColor(AppColor.onHeroSoft)
+                .lineHeight(20)
+                .width('100%');
+            }
+          }
+          .width('100%')
+          .padding(Space.xl)
+          .borderRadius(Radius.lg)
+          .linearGradient({
+            angle: 135,
+            colors: [[AppColor.heroStart, 0.0], [AppColor.heroEnd, 1.0]]
+          })
+          .shadow(Elevation.card);
+
+          Row() {
+            this.statCell('发布', this.profileStats.postCount, () => {
+              router.pushUrl({ url: 'pages/PersonalList', params: { type: 'posts' } });
             });
+            this.statDivider();
+            this.statCell('收藏', this.profileStats.collectionCount, () => {
+              router.pushUrl({ url: 'pages/PersonalList', params: { type: 'collections' } });
+            });
+            this.statDivider();
+            this.statCell('点赞', this.profileStats.likeCount, () => {
+              router.pushUrl({ url: 'pages/PersonalList', params: { type: 'likes' } });
+            });
+            this.statDivider();
+            this.statCell('连续', this.profileStats.continuousDays, () => {
+            });
+          }
+          .width('100%')
+          .padding({ top: Space.lg, bottom: Space.lg })
+          .backgroundColor(AppColor.surface)
+          .borderRadius(Radius.lg)
+          .border({ width: 1, color: AppColor.border });
+
+          Column() {
+            this.menuRow('✦', '热门趋势', 0, () => {
+              router.pushUrl({ url: 'pages/Trending' });
+            });
+            Divider().color(AppColor.border).margin({ left: 64, right: Space.md });
+            this.menuRow('◷', '浏览记录', 0, () => {
+              router.pushUrl({ url: 'pages/PersonalList', params: { type: 'history' } });
+            });
+            Divider().color(AppColor.border).margin({ left: 64, right: Space.md });
+            this.menuRow('✉', '消息通知', this.unreadCount, () => {
+              router.pushUrl({ url: 'pages/Messages' });
+            });
+            Divider().color(AppColor.border).margin({ left: 64, right: Space.md });
+            this.menuRow('▤', '科研数据看板', 0, () => {
+              router.pushUrl({ url: 'pages/ResearchDashboard' });
+            });
+            Divider().color(AppColor.border).margin({ left: 64, right: Space.md });
+            this.menuRow('▦', '文献 PDF 库', 0, () => {
+              router.pushUrl({ url: 'pages/PaperLibrary' });
+            });
+          }
+          .width('100%')
+          .padding({ top: Space.sm, bottom: Space.sm })
+          .backgroundColor(AppColor.surface)
+          .borderRadius(Radius.lg)
+          .border({ width: 1, color: AppColor.border });
+
+          Column() {
+            this.menuRow('⚙', '账号设置', 0, () => {
+              router.pushUrl({ url: 'pages/Settings' });
+            });
+            Divider().color(AppColor.border).margin({ left: 64, right: Space.md });
+            this.menuRow('◎', '账号安全', 0, () => {
+              router.pushUrl({ url: 'pages/SecuritySettings' });
+            });
+          }
+          .width('100%')
+          .padding({ top: Space.sm, bottom: Space.sm })
+          .backgroundColor(AppColor.surface)
+          .borderRadius(Radius.lg)
+          .border({ width: 1, color: AppColor.border });
+        } else {
+          Column({ space: Space.md }) {
+            Text(this.initial('研'))
+              .width(64)
+              .height(64)
+              .borderRadius(32)
+              .backgroundColor(AppColor.primarySoft)
+              .fontColor(AppColor.primary)
+              .fontSize(26)
+              .fontWeight(FontWeight.Bold)
+              .textAlign(TextAlign.Center);
+            Text('登录科研社区')
+              .fontSize(Font.title)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(AppColor.textTitle);
+            Text('登录后可发布日报、收藏文献、参与讨论、追踪科研数据。')
+              .fontSize(Font.small)
+              .fontColor(AppColor.textSecondary)
+              .textAlign(TextAlign.Center)
+              .lineHeight(20);
+            Button('登录 / 注册')
+              .height(44)
+              .width('100%')
+              .fontWeight(FontWeight.Medium)
+              .fontColor(AppColor.textOnPrimary)
+              .backgroundColor(AppColor.primary)
+              .borderRadius(Radius.lg)
+              .onClick(() => {
+                router.pushUrl({ url: 'pages/Login' });
+              });
+          }
+          .width('100%')
+          .padding(Space.xl)
+          .backgroundColor(AppColor.surface)
+          .borderRadius(Radius.lg)
+          .border({ width: 1, color: AppColor.border })
+          .alignItems(HorizontalAlign.Center);
         }
-        .width('100%')
-        .padding(18)
-        .backgroundColor('#FFFFFF')
-        .borderRadius(12);
       }
+      .width('100%')
+      .padding({ left: Space.md, right: Space.md, top: Space.lg, bottom: Space.xxl });
     }
     .width('100%')
     .height('100%')
-    .padding(14)
-    .backgroundColor('#F6F8FB');
-  }
-
-  @Builder
-  private statTile(label: string, value: number): void {
-    Column({ space: 3 }) {
-      Text(value.toString())
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor('#111111');
-      Text(label)
-        .fontSize(11)
-        .fontColor('#777777');
-    }
-    .height(58)
-    .layoutWeight(1)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor('#F6F8FB')
-    .borderRadius(10);
+    .scrollBar(BarState.Off)
+    .backgroundColor(AppColor.bg);
   }
 
   build() {
@@ -1156,29 +1359,25 @@ struct Index {
       TabContent() {
         this.feedTab();
       }
-      .tabBar(this.tabLabel('首页'));
+      .tabBar(this.tabBarItem('首页', 0));
 
       TabContent() {
         this.editorTab();
       }
-      .tabBar(this.tabLabel('创作'));
-
-      TabContent() {
-        this.topicsTab();
-      }
-      .tabBar(this.tabLabel('话题'));
+      .tabBar(this.tabBarItem('创作', 1));
 
       TabContent() {
         this.profileTab();
       }
-      .tabBar(this.tabLabel('我的'));
+      .tabBar(this.tabBarItem('我的', 2));
     }
     .width('100%')
     .height('100%')
-    .width('100%');
+    .scrollable(false)
+    .barBackgroundColor(AppColor.surface)
+    .divider({ strokeWidth: 1, color: AppColor.border })
+    .onChange((index: number) => {
+      this.currentTab = index;
+    });
   }
 }
-
-
-
-

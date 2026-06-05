@@ -1,5 +1,6 @@
 import { router } from '@kit.ArkUI';
 import { authService } from '../services/AuthService';
+import { AppColor, Space, Radius, Font } from '../theme/AppTheme';
 
 @Entry
 @Component
@@ -52,10 +53,14 @@ struct Login {
   }
 
   build() {
-    Column({ space: 18 }) {
+    Column({ space: Space.xl }) {
       Row() {
         Button('返回')
           .type(ButtonType.Capsule)
+          .fontSize(Font.body)
+          .fontColor(AppColor.textBody)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
           .onClick(() => {
             router.back();
           });
@@ -63,84 +68,90 @@ struct Login {
       }
       .width('100%');
 
-      Column({ space: 8 }) {
+      Column({ space: Space.sm }) {
         Text(this.isRegister ? '创建账号' : '欢迎回来')
           .fontSize(28)
           .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.textTitle)
           .width('100%');
         Text(this.isRegister ? '只需设置用户名和密码，昵称和邮箱可在个人资料中补充。' : '可使用 demo / 123456 快速体验。')
-          .fontSize(14)
-          .fontColor('#667085')
+          .fontSize(Font.body)
+          .fontColor(AppColor.textSecondary)
           .width('100%');
-        Row({ space: 8 }) {
+        Row({ space: Space.sm }) {
           Text('●')
-            .fontSize(12)
-            .fontColor(this.backendChecked ? (this.backendConnected ? '#12B76A' : '#F79009') : '#667085');
+            .fontSize(Font.small)
+            .fontColor(this.backendChecked ? (this.backendConnected ? AppColor.success : AppColor.warning) : AppColor.textSecondary);
           Text(this.backendChecked ? (this.backendConnected ? '后端已连接，账号将保存到数据库。' : '后端未连接，当前为本地演示模式。') : '正在检测后端连接...')
-            .fontSize(12)
-            .fontColor('#667085')
+            .fontSize(Font.small)
+            .fontColor(AppColor.textSecondary)
             .layoutWeight(1);
           Button('刷新')
             .type(ButtonType.Normal)
-            .fontSize(12)
-            .fontColor('#1E88E5')
-            .backgroundColor('#EAF4FF')
+            .fontSize(Font.small)
+            .fontColor(AppColor.accent)
+            .backgroundColor(AppColor.accentSoft)
             .height(28)
-            .borderRadius(8)
+            .borderRadius(Radius.sm)
             .onClick(() => {
               this.refreshBackendStatus();
             });
         }
         .width('100%')
-        .padding({ top: 6, right: 10, bottom: 6, left: 10 })
-        .backgroundColor('#FFFFFF')
-        .borderRadius(10);
+        .padding({ top: 6, right: Space.md, bottom: 6, left: Space.md })
+        .backgroundColor(AppColor.surface)
+        .borderRadius(Radius.md)
+        .border({ width: 1, color: AppColor.border });
       }
       .width('100%');
 
-      Column({ space: 12 }) {
+      Column({ space: Space.md }) {
         TextInput({ placeholder: this.isRegister ? '用户名（必填）' : '用户名', text: this.username })
           .height(48)
-          .fontSize(15)
-          .backgroundColor('#FFFFFF')
-          .borderRadius(10)
+          .fontSize(Font.body)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
+          .borderRadius(Radius.md)
           .onChange((value: string) => {
             this.username = value;
           });
 
         TextInput({ placeholder: this.isRegister ? '密码（至少 6 位）' : '密码', text: this.password })
           .height(48)
-          .fontSize(15)
+          .fontSize(Font.body)
           .type(InputType.Password)
-          .backgroundColor('#FFFFFF')
-          .borderRadius(10)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
+          .borderRadius(Radius.md)
           .onChange((value: string) => {
             this.password = value;
           });
 
         if (this.errorMessage.length > 0) {
           Text(this.errorMessage)
-            .fontSize(13)
-            .fontColor('#D92D20')
+            .fontSize(Font.small)
+            .fontColor(AppColor.danger)
             .width('100%');
         }
 
         Button(this.isRegister ? '注册并登录' : '登录')
           .height(48)
           .width('100%')
-          .borderRadius(10)
-          .backgroundColor('#1E88E5')
+          .fontWeight(FontWeight.Medium)
+          .fontColor(AppColor.textOnPrimary)
+          .borderRadius(Radius.md)
+          .backgroundColor(AppColor.primary)
           .onClick(() => {
             this.submit();
           });
 
         Button(this.isRegister ? '已有账号，去登录' : '创建新账号')
           .type(ButtonType.Normal)
-          .fontColor('#1E88E5')
-          .backgroundColor('#EEF6FF')
+          .fontColor(AppColor.accentStrong)
+          .backgroundColor(AppColor.accentSoft)
           .width('100%')
           .height(44)
-          .borderRadius(10)
+          .borderRadius(Radius.md)
           .onClick(() => {
             this.switchMode();
           });
@@ -149,7 +160,7 @@ struct Login {
     }
     .width('100%')
     .height('100%')
-    .padding(20)
-    .backgroundColor('#F5F7FB');
+    .padding(Space.xl)
+    .backgroundColor(AppColor.bg);
   }
 }

@@ -495,6 +495,30 @@ def remove_my_like(item_id: str, current_user: UserProfile = Depends(get_current
     return ApiMessage(message="Like removed")
 
 
+@app.get("/api/v1/users/me/follows", response_model=PersonalListResponse)
+def my_follows(current_user: UserProfile = Depends(get_current_user)):
+    return PersonalListResponse(items=store.get_personal_items("follows", current_user.id))
+
+
+@app.get("/api/v1/users/me/follows/{item_id}/state", response_model=InteractionState)
+def my_follow_state(item_id: str, current_user: UserProfile = Depends(get_current_user)):
+    return InteractionState(active=store.has_personal_item("follows", current_user.id, item_id))
+
+
+@app.post("/api/v1/users/me/follows", response_model=PersonalItem)
+def add_my_follow(payload: PersonalItemActionRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.add_personal_item("follows", current_user.id, payload, "已关注")
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.delete("/api/v1/users/me/follows/{item_id}", response_model=ApiMessage)
+def remove_my_follow(item_id: str, current_user: UserProfile = Depends(get_current_user)):
+    store.remove_personal_item("follows", current_user.id, item_id)
+    return ApiMessage(message="Follow removed")
+
+
 @app.get("/api/v1/users/me/history", response_model=PersonalListResponse)
 def my_history(current_user: UserProfile = Depends(get_current_user)):
     return PersonalListResponse(items=store.get_personal_items("history", current_user.id))

@@ -1,6 +1,7 @@
 import { router } from '@kit.ArkUI';
 import { DailyPost } from '../models/DailyPost';
 import { dailyPostService } from '../services/DailyPostService';
+import { AppColor, Space, Radius, Font, Elevation } from '../theme/AppTheme';
 
 @Entry
 @Component
@@ -45,55 +46,57 @@ struct TopicDetail {
 
   @Builder
   private postRow(post: DailyPost): void {
-    Row({ space: 10 }) {
+    Row({ space: Space.md }) {
       Image(post.coverUrl)
         .width(92)
         .height(116)
         .objectFit(ImageFit.Cover)
-        .borderRadius(10);
-      Column({ space: 6 }) {
+        .borderRadius(Radius.md);
+      Column({ space: Space.sm }) {
         Text(post.title)
-          .fontSize(16)
+          .fontSize(Font.sub)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#202124')
+          .fontColor(AppColor.textTitle)
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%');
         Text(post.summary)
-          .fontSize(13)
-          .fontColor('#5F6368')
+          .fontSize(Font.small)
+          .fontColor(AppColor.textSecondary)
           .lineHeight(19)
           .maxLines(3)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%');
         Row() {
           Text(post.authorName)
-            .fontSize(11)
-            .fontColor('#8B8F98');
+            .fontSize(Font.caption)
+            .fontColor(AppColor.textMuted);
           Blank();
           Text(post.categoryName)
-            .fontSize(11)
-            .fontColor('#1E88E5');
+            .fontSize(Font.caption)
+            .fontColor(AppColor.accent);
         }
         .width('100%');
       }
       .layoutWeight(1);
     }
     .width('100%')
-    .padding(10)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(12);
+    .padding(Space.md)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: AppColor.border });
   }
 
   build() {
-    Column({ space: 12 }) {
+    Column({ space: Space.md }) {
       Row() {
         Button('返回')
           .height(34)
-          .fontSize(13)
-          .fontColor('#111111')
-          .backgroundColor('#FFFFFF')
-          .borderRadius(17)
+          .fontSize(Font.small)
+          .fontColor(AppColor.textBody)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
+          .borderRadius(Radius.lg)
           .onClick(() => {
             router.back();
           });
@@ -101,46 +104,48 @@ struct TopicDetail {
       }
       .width('100%');
 
-      Column({ space: 6 }) {
+      Column({ space: Space.sm }) {
         Text(`#${this.tagName}`)
-          .fontSize(26)
+          .fontSize(Font.h1)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#111111')
+          .fontColor(AppColor.textTitle)
           .width('100%');
         Text(`${this.categoryName} · ${this.posts.length} 篇科研日报`)
-          .fontSize(13)
-          .fontColor('#6B7280')
+          .fontSize(Font.small)
+          .fontColor(AppColor.textSecondary)
           .width('100%');
       }
       .width('100%')
-      .padding(16)
-      .backgroundColor('#FFFFFF')
-      .borderRadius(12);
+      .padding(Space.lg)
+      .backgroundColor(AppColor.surface)
+      .borderRadius(Radius.lg)
+      .border({ width: 1, color: AppColor.border })
+      .shadow(Elevation.card);
 
       Scroll() {
         if (this.loading) {
           Text('正在加载话题内容...')
-            .fontSize(14)
-            .fontColor('#8B8F98')
+            .fontSize(Font.body)
+            .fontColor(AppColor.textMuted)
             .width('100%')
             .textAlign(TextAlign.Center)
             .margin({ top: 80 });
         } else if (this.posts.length === 0) {
-          Column({ space: 8 }) {
+          Column({ space: Space.sm }) {
             Text('这个话题还没有日报')
-              .fontSize(18)
+              .fontSize(Font.title)
               .fontWeight(FontWeight.Bold)
-              .fontColor('#333333');
+              .fontColor(AppColor.textTitle);
             Text('回到创作页，发布第一篇带话题标签的科研日报。')
-              .fontSize(13)
-              .fontColor('#777777')
+              .fontSize(Font.small)
+              .fontColor(AppColor.textSecondary)
               .textAlign(TextAlign.Center);
           }
           .width('100%')
           .height(240)
           .justifyContent(FlexAlign.Center);
         } else {
-          Column({ space: 10 }) {
+          Column({ space: Space.md }) {
             ForEach(this.posts, (post: DailyPost) => {
               this.postRow(post);
             }, (post: DailyPost) => post.id);
@@ -148,9 +153,9 @@ struct TopicDetail {
               .height(42)
               .width('100%')
               .enabled(this.hasMore)
-              .fontColor(this.hasMore ? '#FFFFFF' : '#8B8F98')
-              .backgroundColor(this.hasMore ? '#111111' : '#EEEEEE')
-              .borderRadius(21)
+              .fontColor(this.hasMore ? AppColor.textOnPrimary : AppColor.textMuted)
+              .backgroundColor(this.hasMore ? AppColor.primary : AppColor.surfaceSoft)
+              .borderRadius(Radius.lg)
               .onClick(() => {
                 this.loadMore();
               });
@@ -162,7 +167,7 @@ struct TopicDetail {
     }
     .width('100%')
     .height('100%')
-    .padding(14)
-    .backgroundColor('#F7F7F7');
+    .padding(Space.md)
+    .backgroundColor(AppColor.bg);
   }
 }

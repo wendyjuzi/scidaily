@@ -5,6 +5,7 @@ import { authService } from '../services/AuthService';
 import { communityService } from '../services/CommunityService';
 import { newsService } from '../services/NewsService';
 import { personalCenterService } from '../services/PersonalCenterService';
+import { AppColor, Space, Radius, Font, Elevation } from '../theme/AppTheme';
 
 @Entry
 @Component
@@ -194,31 +195,58 @@ struct Detail {
     return user !== undefined && user.id === item.userId;
   }
 
+  private initial(name: string): string {
+    return name.length > 0 ? name.substring(0, 1).toUpperCase() : '研';
+  }
+
+  private avatarColor(seed: string): string {
+    const palette: string[] = [AppColor.primary, AppColor.accent, AppColor.accentStrong, AppColor.series3, AppColor.primaryStrong];
+    let sum = 0;
+    for (let i = 0; i < seed.length; i++) {
+      sum += seed.charCodeAt(i);
+    }
+    return palette[sum % palette.length];
+  }
+
+  @Builder
+  private avatarInitial(name: string, size: number): void {
+    Text(this.initial(name))
+      .width(size)
+      .height(size)
+      .borderRadius(size / 2)
+      .backgroundColor(this.avatarColor(name))
+      .fontColor(AppColor.textOnPrimary)
+      .fontSize(size * 0.42)
+      .fontWeight(FontWeight.Medium)
+      .textAlign(TextAlign.Center);
+  }
+
   @Builder
   private summaryTile(label: string, value: number): void {
-    Column({ space: 4 }) {
+    Column({ space: Space.xs }) {
       Text(value.toString())
-        .fontSize(18)
+        .fontSize(Font.title)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#1D2939');
+        .fontColor(AppColor.textTitle);
       Text(label)
-        .fontSize(12)
-        .fontColor('#667085');
+        .fontSize(Font.small)
+        .fontColor(AppColor.textSecondary);
     }
     .layoutWeight(1)
-    .height(62)
+    .height(64)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(10);
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.md)
+    .border({ width: 1, color: AppColor.border });
   }
 
   @Builder
   private sortButton(title: string, sort: string): void {
     Button(title)
       .type(ButtonType.Capsule)
-      .fontSize(12)
-      .fontColor(this.commentSort === sort ? '#FFFFFF' : '#1D2939')
-      .backgroundColor(this.commentSort === sort ? '#1E88E5' : '#EAF1F8')
+      .fontSize(Font.small)
+      .fontColor(this.commentSort === sort ? AppColor.textOnPrimary : AppColor.textBody)
+      .backgroundColor(this.commentSort === sort ? AppColor.primary : AppColor.primarySoft)
       .onClick(() => {
         this.switchSort(sort);
       });
@@ -226,56 +254,56 @@ struct Detail {
 
   @Builder
   private commentCard(item: CommentItem): void {
-    Column({ space: 8 }) {
+    Column({ space: Space.sm }) {
       Row() {
         Column({ space: 2 }) {
           Text(item.nickname)
-            .fontSize(14)
+            .fontSize(Font.body)
             .fontWeight(FontWeight.Medium)
-            .fontColor('#1D2939');
+            .fontColor(AppColor.textTitle);
           Text(item.createdAt)
-            .fontSize(11)
-            .fontColor('#98A2B3');
+            .fontSize(Font.caption)
+            .fontColor(AppColor.textMuted);
         }
         .layoutWeight(1);
         Text(`${item.likeCount} 热度`)
-          .fontSize(11)
-          .fontColor('#F79009');
+          .fontSize(Font.caption)
+          .fontColor(AppColor.warning);
       }
       .width('100%');
 
       if (item.replyToNickname !== undefined && item.replyToNickname.length > 0) {
         Text(`回复 @${item.replyToNickname}`)
-          .fontSize(12)
-          .fontColor('#1E88E5')
+          .fontSize(Font.small)
+          .fontColor(AppColor.accent)
           .width('100%');
       }
 
       Text(item.content)
-        .fontSize(14)
-        .fontColor('#344054')
+        .fontSize(Font.body)
+        .fontColor(AppColor.textBody)
         .lineHeight(20)
         .width('100%');
 
-      Row({ space: 8 }) {
+      Row({ space: Space.sm }) {
         Button('回复')
           .type(ButtonType.Normal)
-          .fontSize(12)
+          .fontSize(Font.small)
           .height(28)
-          .fontColor('#1E88E5')
-          .backgroundColor('#EEF6FF')
-          .borderRadius(8)
+          .fontColor(AppColor.accent)
+          .backgroundColor(AppColor.accentSoft)
+          .borderRadius(Radius.sm)
           .onClick(() => {
             this.startReply(item);
           });
         if (this.canDelete(item)) {
           Button('删除')
             .type(ButtonType.Normal)
-            .fontSize(12)
+            .fontSize(Font.small)
             .height(28)
-            .fontColor('#D92D20')
-            .backgroundColor('#FFEFEF')
-            .borderRadius(8)
+            .fontColor(AppColor.danger)
+            .backgroundColor(AppColor.dangerSoft)
+            .borderRadius(Radius.sm)
             .onClick(() => {
               this.deleteComment(item.id);
             });
@@ -285,17 +313,22 @@ struct Detail {
       .width('100%');
     }
     .width('100%')
-    .padding(12)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(10);
+    .padding(Space.md)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.md)
+    .border({ width: 1, color: AppColor.border });
   }
 
   build() {
     Scroll() {
-      Column({ space: 12 }) {
+      Column({ space: Space.md }) {
       Row() {
         Button('返回')
           .type(ButtonType.Capsule)
+          .fontSize(Font.body)
+          .fontColor(AppColor.textBody)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
           .onClick(() => {
             router.back();
           });
@@ -305,111 +338,149 @@ struct Detail {
 
       if (!this.news) {
         Text('未找到该日报内容')
-          .fontSize(16)
-          .fontColor('#8A94A6');
+          .fontSize(Font.sub)
+          .fontColor(AppColor.textMuted);
       } else {
         Text(this.news.title)
-          .fontSize(22)
+          .fontSize(Font.h2)
           .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.textTitle)
           .width('100%');
 
-        Row({ space: 10 }) {
+        Row({ space: Space.md }) {
           Text(this.news.category)
-            .fontSize(13)
-            .fontColor('#1E88E5');
+            .fontSize(Font.small)
+            .fontColor(AppColor.accent)
+            .fontWeight(FontWeight.Medium)
+            .backgroundColor(AppColor.accentSoft)
+            .borderRadius(Radius.sm)
+            .padding({ left: Space.sm, right: Space.sm, top: 3, bottom: 3 });
           Text(this.news.publishedDate)
-            .fontSize(13)
-            .fontColor('#8A94A6');
+            .fontSize(Font.small)
+            .fontColor(AppColor.textMuted);
         }
         .width('100%');
 
-        Text(`作者：${this.news.authors.join('、')}`)
-          .fontSize(14)
-          .fontColor('#475467')
-          .width('100%');
+        Row({ space: Space.md }) {
+          this.avatarInitial(this.news.authors.length > 0 ? this.news.authors[0] : '研', 38);
+          Column({ space: 2 }) {
+            Text(this.news.authors.join('、'))
+              .fontSize(Font.body)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(AppColor.textTitle)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .width('100%');
+            Text(`${this.news.category} · ${this.news.publishedDate}`)
+              .fontSize(Font.caption)
+              .fontColor(AppColor.textMuted)
+              .width('100%');
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start);
+        }
+        .width('100%')
+        .padding(Space.md)
+        .backgroundColor(AppColor.surface)
+        .borderRadius(Radius.md)
+        .border({ width: 1, color: AppColor.border });
 
         Text('核心摘要')
-          .fontSize(16)
+          .fontSize(Font.sub)
           .fontWeight(FontWeight.Medium)
-          .margin({ top: 6 })
+          .fontColor(AppColor.textTitle)
+          .margin({ top: Space.xs })
           .width('100%');
 
-        Text(this.news.aiSummary)
-          .fontSize(15)
-          .fontColor('#1E2A3A')
-          .width('100%')
-          .padding(12)
-          .backgroundColor('#ECF5FF')
-          .borderRadius(10);
+        Row({ space: Space.md }) {
+          Column()
+            .width(3)
+            .height('100%')
+            .backgroundColor(AppColor.accent)
+            .borderRadius(2);
+          Text(this.news.aiSummary)
+            .fontSize(Font.sub)
+            .fontColor(AppColor.textBody)
+            .lineHeight(23)
+            .layoutWeight(1);
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Top)
+        .padding(Space.md)
+        .backgroundColor(AppColor.accentSoft)
+        .borderRadius(Radius.md);
 
         Text('论文摘要')
-          .fontSize(16)
+          .fontSize(Font.sub)
           .fontWeight(FontWeight.Medium)
-          .margin({ top: 8 })
+          .fontColor(AppColor.textTitle)
+          .margin({ top: Space.sm })
           .width('100%');
 
         Text(this.news.abstract)
-          .fontSize(14)
+          .fontSize(Font.body)
           .lineHeight(22)
-          .fontColor('#344054')
+          .fontColor(AppColor.textBody)
           .width('100%');
 
         if (this.news.doi) {
           Text(`DOI: ${this.news.doi}`)
-            .fontSize(13)
-            .fontColor('#475467')
+            .fontSize(Font.small)
+            .fontColor(AppColor.textSecondary)
             .width('100%')
-            .margin({ top: 8 });
+            .margin({ top: Space.sm });
         }
 
         Text(`来源链接：${this.news.sourceUrl}`)
-          .fontSize(13)
-          .fontColor('#1E88E5')
+          .fontSize(Font.small)
+          .fontColor(AppColor.accent)
           .width('100%')
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis });
 
         if (this.errorMessage.length > 0) {
           Text(this.errorMessage)
-            .fontSize(13)
-            .fontColor('#D92D20')
+            .fontSize(Font.small)
+            .fontColor(AppColor.danger)
             .width('100%');
         }
 
-        Row({ space: 10 }) {
+        Row({ space: Space.md }) {
           Button(this.isBookmarked ? '取消收藏' : '收藏')
             .layoutWeight(1)
             .height(44)
-            .backgroundColor(this.isBookmarked ? '#EEF6FF' : '#1E88E5')
-            .fontColor(this.isBookmarked ? '#1E88E5' : '#FFFFFF')
+            .fontWeight(FontWeight.Medium)
+            .backgroundColor(this.isBookmarked ? AppColor.primarySoft : AppColor.primary)
+            .fontColor(this.isBookmarked ? AppColor.primary : AppColor.textOnPrimary)
             .onClick(() => {
               this.toggleBookmark();
             });
           Button(this.isLiked ? '取消点赞' : '点赞')
             .layoutWeight(1)
             .height(44)
-            .backgroundColor(this.isLiked ? '#FFF1F3' : '#12B76A')
-            .fontColor(this.isLiked ? '#E31B54' : '#FFFFFF')
+            .fontWeight(FontWeight.Medium)
+            .backgroundColor(this.isLiked ? AppColor.accentSoft : AppColor.accent)
+            .fontColor(this.isLiked ? AppColor.accentStrong : AppColor.textOnPrimary)
             .onClick(() => {
               this.toggleLike();
             });
         }
         .width('100%')
-        .margin({ top: 12 });
+        .margin({ top: Space.md });
 
-        Row({ space: 8 }) {
+        Row({ space: Space.sm }) {
           this.summaryTile('点赞', this.summary.likeCount);
           this.summaryTile('收藏', this.summary.collectionCount);
           this.summaryTile('评论', this.summary.commentCount);
         }
         .width('100%');
 
-        Column({ space: 10 }) {
+        Column({ space: Space.md }) {
           Row() {
             Text('社区评论')
-              .fontSize(18)
+              .fontSize(Font.title)
               .fontWeight(FontWeight.Medium)
-              .fontColor('#1D2939');
+              .fontColor(AppColor.textTitle);
             Blank();
             this.sortButton('最新', 'latest');
             this.sortButton('热门', 'hot');
@@ -419,15 +490,15 @@ struct Detail {
           if (this.replyHint.length > 0) {
             Row() {
               Text(this.replyHint)
-                .fontSize(12)
-                .fontColor('#1E88E5');
+                .fontSize(Font.small)
+                .fontColor(AppColor.accent);
               Blank();
               Button('取消')
                 .type(ButtonType.Normal)
-                .fontSize(12)
+                .fontSize(Font.small)
                 .height(28)
-                .backgroundColor('#F2F4F7')
-                .fontColor('#667085')
+                .backgroundColor(AppColor.surfaceSoft)
+                .fontColor(AppColor.textSecondary)
                 .onClick(() => {
                   this.replyToId = 0;
                   this.replyHint = '';
@@ -436,12 +507,13 @@ struct Detail {
             .width('100%');
           }
 
-          Row({ space: 8 }) {
+          Row({ space: Space.sm }) {
             TextInput({ placeholder: '写下你的科研想法或复盘建议', text: this.commentInput })
               .height(42)
-              .fontSize(14)
-              .backgroundColor('#F8FAFC')
-              .borderRadius(10)
+              .fontSize(Font.body)
+              .backgroundColor(AppColor.surface)
+              .border({ width: 1, color: AppColor.border })
+              .borderRadius(Radius.md)
               .layoutWeight(1)
               .onChange((value: string) => {
                 this.commentInput = value;
@@ -449,8 +521,9 @@ struct Detail {
             Button('发布')
               .height(42)
               .width(72)
-              .borderRadius(10)
-              .backgroundColor('#1E88E5')
+              .borderRadius(Radius.md)
+              .backgroundColor(AppColor.primary)
+              .fontColor(AppColor.textOnPrimary)
               .onClick(() => {
                 this.submitComment();
               });
@@ -459,22 +532,22 @@ struct Detail {
 
           Row() {
             Text(this.replyHint.length > 0 ? '当前评论会作为回复发布' : '支持评论与楼中楼回复')
-              .fontSize(11)
-              .fontColor('#98A2B3');
+              .fontSize(Font.caption)
+              .fontColor(AppColor.textMuted);
             Blank();
             Text(`${this.commentInput.length}/200`)
-              .fontSize(11)
-              .fontColor(this.commentInput.length > 200 ? '#D92D20' : '#98A2B3');
+              .fontSize(Font.caption)
+              .fontColor(this.commentInput.length > 200 ? AppColor.danger : AppColor.textMuted);
           }
           .width('100%');
 
           if (this.comments.length === 0) {
             Text('暂无评论，来发布第一条科研讨论吧。')
-              .fontSize(13)
-              .fontColor('#8A94A6')
+              .fontSize(Font.small)
+              .fontColor(AppColor.textMuted)
               .width('100%')
               .textAlign(TextAlign.Center)
-              .padding(12);
+              .padding(Space.md);
           } else {
             ForEach(this.comments, (item: CommentItem) => {
               this.commentCard(item);
@@ -482,17 +555,18 @@ struct Detail {
           }
         }
         .width('100%')
-        .padding(12)
-        .backgroundColor('#F8FAFC')
-        .borderRadius(12);
+        .padding(Space.md)
+        .backgroundColor(AppColor.bg)
+        .borderRadius(Radius.lg)
+        .border({ width: 1, color: AppColor.border });
       }
     }
     .width('100%')
-    .padding(16)
-    .backgroundColor('#F5F7FB');
+    .padding(Space.lg)
+    .backgroundColor(AppColor.bg);
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F7FB');
+    .backgroundColor(AppColor.bg);
   }
 }

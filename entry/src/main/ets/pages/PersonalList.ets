@@ -2,6 +2,7 @@ import { router } from '@kit.ArkUI';
 import { PersonalItem } from '../models/User';
 import { authService } from '../services/AuthService';
 import { personalCenterService } from '../services/PersonalCenterService';
+import { AppColor, Space, Radius, Font } from '../theme/AppTheme';
 
 @Entry
 @Component
@@ -42,48 +43,53 @@ struct PersonalList {
 
   @Builder
   private itemCard(item: PersonalItem): void {
-    Column({ space: 8 }) {
+    Column({ space: Space.sm }) {
       Row() {
         Text(item.status)
-          .fontSize(12)
-          .fontColor('#1E88E5')
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-          .backgroundColor('#EEF6FF')
-          .borderRadius(8);
+          .fontSize(Font.small)
+          .fontColor(AppColor.accent)
+          .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
+          .backgroundColor(AppColor.accentSoft)
+          .borderRadius(Radius.sm);
         Blank();
         Text(item.createdAt)
-          .fontSize(12)
-          .fontColor('#8A94A6');
+          .fontSize(Font.small)
+          .fontColor(AppColor.textMuted);
       }
       .width('100%');
 
       Text(item.title)
-        .fontSize(17)
+        .fontSize(Font.sub)
         .fontWeight(FontWeight.Medium)
-        .fontColor('#1D2939')
+        .fontColor(AppColor.textTitle)
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%');
 
       Text(item.summary)
-        .fontSize(14)
-        .fontColor('#667085')
+        .fontSize(Font.body)
+        .fontColor(AppColor.textSecondary)
         .lineHeight(20)
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%');
     }
     .width('100%')
-    .padding(14)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(12);
+    .padding(Space.lg)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: AppColor.border });
   }
 
   build() {
-    Column({ space: 14 }) {
+    Column({ space: Space.lg }) {
       Row() {
         Button('返回')
           .type(ButtonType.Capsule)
+          .fontSize(Font.body)
+          .fontColor(AppColor.textBody)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
           .onClick(() => {
             router.back();
           });
@@ -91,7 +97,8 @@ struct PersonalList {
         if (this.listType === 'history' && this.items.length > 0) {
           Button('清空')
             .type(ButtonType.Capsule)
-            .backgroundColor('#F04438')
+            .fontColor(AppColor.danger)
+            .backgroundColor(AppColor.dangerSoft)
             .onClick(() => {
               this.clearHistory();
             });
@@ -100,33 +107,34 @@ struct PersonalList {
       .width('100%');
 
       Text(this.listTitle)
-        .fontSize(26)
+        .fontSize(Font.h1)
         .fontWeight(FontWeight.Bold)
+        .fontColor(AppColor.textTitle)
         .width('100%');
 
       if (this.errorMessage.length > 0) {
         Text(this.errorMessage)
-          .fontSize(13)
-          .fontColor('#D92D20')
+          .fontSize(Font.small)
+          .fontColor(AppColor.danger)
           .width('100%');
       }
 
       if (this.items.length === 0) {
-        Column({ space: 8 }) {
+        Column({ space: Space.sm }) {
           Text('暂无内容')
-            .fontSize(17)
+            .fontSize(Font.sub)
             .fontWeight(FontWeight.Medium)
-            .fontColor('#475467');
+            .fontColor(AppColor.textBody);
           Text('与当前账号相关的内容会显示在这里。')
-            .fontSize(14)
-            .fontColor('#8A94A6')
+            .fontSize(Font.body)
+            .fontColor(AppColor.textMuted)
             .textAlign(TextAlign.Center);
         }
         .width('100%')
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center);
       } else {
-        List({ space: 10 }) {
+        List({ space: Space.md }) {
           ForEach(this.items, (item: PersonalItem) => {
             ListItem() {
               this.itemCard(item);
@@ -140,7 +148,7 @@ struct PersonalList {
     }
     .width('100%')
     .height('100%')
-    .padding(16)
-    .backgroundColor('#F5F7FB');
+    .padding(Space.lg)
+    .backgroundColor(AppColor.bg);
   }
 }

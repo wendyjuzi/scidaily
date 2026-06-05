@@ -1,5 +1,6 @@
 import { router } from '@kit.ArkUI';
 import { authService } from '../services/AuthService';
+import { AppColor, Space, Radius, Font } from '../theme/AppTheme';
 
 @Entry
 @Component
@@ -34,10 +35,14 @@ struct SecuritySettings {
   }
 
   build() {
-    Column({ space: 16 }) {
+    Column({ space: Space.lg }) {
       Row() {
         Button('返回')
           .type(ButtonType.Capsule)
+          .fontSize(Font.body)
+          .fontColor(AppColor.textBody)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
           .onClick(() => {
             router.back();
           });
@@ -46,53 +51,59 @@ struct SecuritySettings {
       .width('100%');
 
       Text('账号安全')
-        .fontSize(26)
+        .fontSize(Font.h1)
         .fontWeight(FontWeight.Bold)
+        .fontColor(AppColor.textTitle)
         .width('100%');
 
-      Column({ space: 12 }) {
+      Column({ space: Space.md }) {
         TextInput({ placeholder: '旧密码', text: this.oldPassword })
           .height(48)
-          .fontSize(15)
+          .fontSize(Font.body)
           .type(InputType.Password)
-          .backgroundColor('#FFFFFF')
-          .borderRadius(10)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
+          .borderRadius(Radius.md)
           .onChange((value: string) => {
             this.oldPassword = value;
           });
 
         TextInput({ placeholder: '新密码', text: this.newPassword })
           .height(48)
-          .fontSize(15)
+          .fontSize(Font.body)
           .type(InputType.Password)
-          .backgroundColor('#FFFFFF')
-          .borderRadius(10)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
+          .borderRadius(Radius.md)
           .onChange((value: string) => {
             this.newPassword = value;
           });
 
         TextInput({ placeholder: '确认新密码', text: this.confirmPassword })
           .height(48)
-          .fontSize(15)
+          .fontSize(Font.body)
           .type(InputType.Password)
-          .backgroundColor('#FFFFFF')
-          .borderRadius(10)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
+          .borderRadius(Radius.md)
           .onChange((value: string) => {
             this.confirmPassword = value;
           });
 
         if (this.errorMessage.length > 0) {
           Text(this.errorMessage)
-            .fontSize(13)
-            .fontColor('#D92D20')
+            .fontSize(Font.small)
+            .fontColor(AppColor.danger)
             .width('100%');
         }
 
         Button('更新密码')
           .height(48)
           .width('100%')
-          .borderRadius(10)
-          .backgroundColor('#1E88E5')
+          .fontWeight(FontWeight.Medium)
+          .fontColor(AppColor.textOnPrimary)
+          .borderRadius(Radius.md)
+          .backgroundColor(AppColor.primary)
           .onClick(() => {
             this.save();
           });
@@ -101,7 +112,7 @@ struct SecuritySettings {
     }
     .width('100%')
     .height('100%')
-    .padding(16)
-    .backgroundColor('#F5F7FB');
+    .padding(Space.lg)
+    .backgroundColor(AppColor.bg);
   }
 }

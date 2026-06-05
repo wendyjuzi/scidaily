@@ -1,6 +1,7 @@
 import { router } from '@kit.ArkUI';
 import { DailyPostDraft, TopicCategory, TopicTag } from '../models/DailyPost';
 import { dailyPostService } from '../services/DailyPostService';
+import { AppColor, Space, Radius, Font } from '../theme/AppTheme';
 
 @Entry
 @Component
@@ -95,7 +96,7 @@ struct CreatePost {
       .width(96)
       .height(96)
       .objectFit(ImageFit.Cover)
-      .borderRadius(16);
+      .borderRadius(Radius.lg);
   }
 
   @Builder
@@ -103,43 +104,43 @@ struct CreatePost {
     Column() {
       Text('+')
         .fontSize(32)
-        .fontColor('#8A8F98');
+        .fontColor(AppColor.textMuted);
       Text('添加图片')
-        .fontSize(12)
-        .fontColor('#8A8F98');
+        .fontSize(Font.small)
+        .fontColor(AppColor.textMuted);
     }
     .width(96)
     .height(96)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
-    .backgroundColor('#F8FAFC')
-    .border({ width: 1, color: '#E5E7EB' })
-    .borderRadius(16);
+    .backgroundColor(AppColor.surfaceSoft)
+    .border({ width: 1, color: AppColor.border })
+    .borderRadius(Radius.lg);
   }
 
   @Builder
   private optionRow(icon: string, title: string, value: string): void {
-    Row({ space: 12 }) {
+    Row({ space: Space.md }) {
       Text(icon)
-        .fontSize(20)
-        .fontColor('#007AFF')
+        .fontSize(Font.h2)
+        .fontColor(AppColor.accent)
         .width(28);
       Text(title)
-        .fontSize(17)
-        .fontColor('#2F3337');
+        .fontSize(Font.sub)
+        .fontColor(AppColor.textBody);
       Blank();
       Text(value)
-        .fontSize(15)
-        .fontColor('#A0A4AA');
+        .fontSize(Font.body)
+        .fontColor(AppColor.textMuted);
       Text('>')
-        .fontSize(20)
-        .fontColor('#C7CBD1');
+        .fontSize(Font.h2)
+        .fontColor(AppColor.textMuted);
     }
     .width('100%')
     .height(56)
-    .border({ width: 1, color: '#F0F1F3' })
-    .borderRadius(14)
-    .padding({ left: 12, right: 12 });
+    .border({ width: 1, color: AppColor.border })
+    .borderRadius(Radius.md)
+    .padding({ left: Space.md, right: Space.md });
   }
 
   build() {
@@ -149,28 +150,28 @@ struct CreatePost {
           .width(42)
           .height(42)
           .fontSize(28)
-          .fontColor('#8A8F98')
+          .fontColor(AppColor.textSecondary)
           .backgroundColor('#00000000')
           .onClick(() => {
             router.back();
           });
         Blank();
         Text('发布科研日报')
-          .fontSize(18)
+          .fontSize(Font.title)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#111827');
+          .fontColor(AppColor.textTitle);
         Blank();
         Text('预览')
-          .fontSize(15)
-          .fontColor('#007AFF');
+          .fontSize(Font.body)
+          .fontColor(AppColor.accent);
       }
       .width('100%')
       .height(58)
-      .padding({ left: 12, right: 20 });
+      .padding({ left: Space.md, right: Space.xl });
 
       Scroll() {
-        Column({ space: 22 }) {
-          Row({ space: 14 }) {
+        Column({ space: Space.xxl }) {
+          Row({ space: Space.lg }) {
             if (this.imageUrls.length > 0) {
               ForEach(this.imageUrls.slice(0, 2), (url: string) => {
                 this.imageSlot(url);
@@ -185,31 +186,31 @@ struct CreatePost {
           TextInput({ placeholder: '添加标题', text: this.title })
             .height(58)
             .fontSize(28)
-            .fontColor('#1F2328')
-            .placeholderColor('#B8BDC7')
-            .backgroundColor('#FFFFFF')
+            .fontColor(AppColor.textTitle)
+            .placeholderColor(AppColor.textMuted)
+            .backgroundColor(AppColor.surface)
             .onChange((value: string) => {
               this.title = value;
             });
 
           TextArea({ placeholder: '添加正文或发语音', text: this.content })
             .height(170)
-            .fontSize(22)
-            .fontColor('#374151')
-            .placeholderColor('#B8BDC7')
+            .fontSize(Font.h2)
+            .fontColor(AppColor.textBody)
+            .placeholderColor(AppColor.textMuted)
             .lineHeight(32)
-            .backgroundColor('#FFFFFF')
+            .backgroundColor(AppColor.surface)
             .onChange((value: string) => {
               this.content = value;
             });
 
-          Row({ space: 10 }) {
+          Row({ space: Space.md }) {
             TextInput({ placeholder: '粘贴图片 URL 后点击添加', text: this.imageUrl })
               .height(44)
-              .fontSize(14)
-              .backgroundColor('#F9FAFB')
-              .border({ width: 1, color: '#E5E7EB' })
-              .borderRadius(16)
+              .fontSize(Font.body)
+              .backgroundColor(AppColor.surfaceSoft)
+              .border({ width: 1, color: AppColor.border })
+              .borderRadius(Radius.lg)
               .layoutWeight(1)
               .onChange((value: string) => {
                 this.imageUrl = value;
@@ -217,10 +218,10 @@ struct CreatePost {
             Button('+')
               .width(44)
               .height(44)
-              .fontSize(24)
-              .fontColor('#FFFFFF')
-              .backgroundColor('#007AFF')
-              .borderRadius(22)
+              .fontSize(Font.h2)
+              .fontColor(AppColor.textOnPrimary)
+              .backgroundColor(AppColor.primary)
+              .borderRadius(Radius.pill)
               .onClick(() => {
                 this.addImage();
               });
@@ -228,20 +229,20 @@ struct CreatePost {
           .width('100%');
 
           Text('选择话题')
-            .fontSize(16)
+            .fontSize(Font.sub)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#111827')
+            .fontColor(AppColor.textTitle)
             .width('100%');
 
           Flex({ wrap: FlexWrap.Wrap }) {
             ForEach(this.tags.filter((tag: TopicTag) => tag.categoryId === this.categoryId).slice(0, 8), (tag: TopicTag) => {
               Text(`# ${tag.name}`)
-                .fontSize(14)
-                .fontColor(this.tagIds.includes(tag.id) ? '#007AFF' : '#8A8F98')
-                .backgroundColor(this.tagIds.includes(tag.id) ? '#EAF4FF' : '#F3F4F6')
-                .borderRadius(18)
-                .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-                .margin({ right: 8, bottom: 8 })
+                .fontSize(Font.body)
+                .fontColor(this.tagIds.includes(tag.id) ? AppColor.accentStrong : AppColor.textSecondary)
+                .backgroundColor(this.tagIds.includes(tag.id) ? AppColor.accentSoft : AppColor.surfaceSoft)
+                .borderRadius(Radius.lg)
+                .padding({ left: Space.lg, right: Space.lg, top: Space.sm, bottom: Space.sm })
+                .margin({ right: Space.sm, bottom: Space.sm })
                 .onClick(() => {
                   this.toggleTag(tag.id);
                 });
@@ -250,20 +251,20 @@ struct CreatePost {
           .width('100%');
 
           Text('选择分类')
-            .fontSize(16)
+            .fontSize(Font.sub)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#111827')
+            .fontColor(AppColor.textTitle)
             .width('100%');
 
           Flex({ wrap: FlexWrap.Wrap }) {
             ForEach(this.categories, (category: TopicCategory) => {
               Text(category.name)
-                .fontSize(15)
-                .fontColor(this.categoryId === category.id ? '#FFFFFF' : '#374151')
-                .backgroundColor(this.categoryId === category.id ? '#007AFF' : '#F3F4F6')
-                .borderRadius(19)
-                .padding({ left: 16, right: 16, top: 9, bottom: 9 })
-                .margin({ right: 8, bottom: 8 })
+                .fontSize(Font.body)
+                .fontColor(this.categoryId === category.id ? AppColor.textOnPrimary : AppColor.textBody)
+                .backgroundColor(this.categoryId === category.id ? AppColor.primary : AppColor.surfaceSoft)
+                .borderRadius(Radius.lg)
+                .padding({ left: Space.lg, right: Space.lg, top: 9, bottom: 9 })
+                .margin({ right: Space.sm, bottom: Space.sm })
                 .onClick(() => {
                   this.categoryId = category.id;
                   this.tagIds = [];
@@ -272,7 +273,7 @@ struct CreatePost {
           }
           .width('100%');
 
-          Column({ space: 10 }) {
+          Column({ space: Space.md }) {
             this.optionRow('◎', '标记方向', this.selectedCategoryName());
             this.optionRow('◌', '公开可见', this.visibleScope);
             this.optionRow('□', '添加组件', '可添加文献 PDF');
@@ -281,32 +282,32 @@ struct CreatePost {
           .width('100%');
 
           Text('笔记内容声明 >')
-            .fontSize(15)
-            .fontColor('#6B7280')
+            .fontSize(Font.body)
+            .fontColor(AppColor.textSecondary)
             .width('100%');
 
           if (this.statusText.length > 0) {
             Text(this.statusText)
-              .fontSize(13)
-              .fontColor('#007AFF')
+              .fontSize(Font.small)
+              .fontColor(AppColor.accent)
               .width('100%')
               .textAlign(TextAlign.Center);
           }
         }
         .width('100%')
-        .padding({ left: 20, right: 20, bottom: 120 });
+        .padding({ left: Space.xl, right: Space.xl, bottom: 120 });
       }
       .layoutWeight(1)
       .scrollBar(BarState.Off);
 
-      Row({ space: 14 }) {
+      Row({ space: Space.lg }) {
         Button('存草稿')
           .height(56)
           .layoutWeight(1)
-          .fontSize(20)
-          .fontColor('#2F3337')
-          .backgroundColor('#FFFFFF')
-          .border({ width: 1, color: '#E5E7EB' })
+          .fontSize(Font.h2)
+          .fontColor(AppColor.textBody)
+          .backgroundColor(AppColor.surface)
+          .border({ width: 1, color: AppColor.border })
           .borderRadius(28)
           .onClick(() => {
             this.saveDraft();
@@ -314,21 +315,21 @@ struct CreatePost {
         Button('发布笔记')
           .height(56)
           .layoutWeight(2)
-          .fontSize(20)
+          .fontSize(Font.h2)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#FFFFFF')
-          .backgroundColor('#007AFF')
+          .fontColor(AppColor.textOnPrimary)
+          .backgroundColor(AppColor.primary)
           .borderRadius(28)
           .onClick(() => {
             this.publish();
           });
       }
       .width('100%')
-      .padding({ left: 20, right: 20, bottom: 22, top: 12 })
-      .backgroundColor('#FFFFFF');
+      .padding({ left: Space.xl, right: Space.xl, bottom: 22, top: Space.md })
+      .backgroundColor(AppColor.surface);
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#FFFFFF');
+    .backgroundColor(AppColor.surface);
   }
 }
