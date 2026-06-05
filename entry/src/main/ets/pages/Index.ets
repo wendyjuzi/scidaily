@@ -43,6 +43,15 @@ interface MessageConversation {
   avatarColor: string;
 }
 
+interface ChatMessage {
+  id: string;
+  conversationId: string;
+  sender: string;
+  content: string;
+  time: string;
+  mine: boolean;
+}
+
 @Entry
 @Component
 struct Index {
@@ -88,6 +97,9 @@ struct Index {
   @State messageItems: NotificationItem[] = [];
   @State messageError: string = '';
   @State messageMode: string = 'chat';
+  @State activeConversationId: string = '';
+  @State chatInput: string = '';
+  @State nextChatMessageId: number = 100;
   @State messageConversations: MessageConversation[] = [
     {
       id: 'crt-lab',
@@ -148,6 +160,72 @@ struct Index {
       unreadCount: 8,
       avatarText: '兄',
       avatarColor: '#7C3AED'
+    }
+  ];
+  @State chatMessages: ChatMessage[] = [
+    {
+      id: 'chat-001',
+      conversationId: 'crt-lab',
+      sender: '导师',
+      content: '本周组会请大家同步实验进展和论文阅读，重点讲清楚下一步计划。',
+      time: '20:40',
+      mine: false
+    },
+    {
+      id: 'chat-002',
+      conversationId: 'crt-lab',
+      sender: '我',
+      content: '收到，我会把 RAG 文献问答和单细胞复现进度整理成两页。',
+      time: '20:42',
+      mine: true
+    },
+    {
+      id: 'chat-003',
+      conversationId: 'crt-lab',
+      sender: '导师',
+      content: '可以，实验指标和失败样例也放进去。',
+      time: '20:44',
+      mine: false
+    },
+    {
+      id: 'chat-004',
+      conversationId: 'neurips-2026',
+      sender: '群公告',
+      content: '今晚整理 rebuttal 时间线和 checklist，明天统一看一遍格式。',
+      time: '20:43',
+      mine: false
+    },
+    {
+      id: 'chat-005',
+      conversationId: 'agent-group',
+      sender: '同学A',
+      content: '多智能体协作那篇代码已经跑通了，主要卡在工具调用的异常恢复。',
+      time: '20:20',
+      mine: false
+    },
+    {
+      id: 'chat-006',
+      conversationId: 'baoyan-2026',
+      sender: '群公告',
+      content: '中南大学夏令营材料模板已更新，注意个人陈述的字数限制。',
+      time: '20:08',
+      mine: false
+    },
+    {
+      id: 'chat-007',
+      conversationId: 'advisor',
+      sender: '导师',
+      content: '明天上午把实验对比表发我看一下，尤其是消融实验那块。',
+      time: '18:49',
+      mine: false
+    },
+    {
+      id: 'chat-008',
+      conversationId: 'senior',
+      sender: '师兄',
+      content: '我把复现脚本放到共享目录了，你先看 README，环境文件也在里面。',
+      time: '17:04',
+      mine: false
     }
   ];
   @State aiMode: string = 'paper';
@@ -536,6 +614,96 @@ struct Index {
     router.pushUrl({
       url: 'pages/DailyPostDetail',
       params: { id: relatedId }
+    });
+  }
+
+  private currentConversation(): MessageConversation | undefined {
+    return this.messageConversations.find((item: MessageConversation) => item.id === this.activeConversationId);
+  }
+
+  private conversationMessages(conversationId: string): ChatMessage[] {
+    return this.chatMessages.filter((item: ChatMessage) => item.conversationId === conversationId);
+  }
+
+  private openConversation(conversationId: string): void {
+    this.activeConversationId = conversationId;
+    this.messageMode = 'chat';
+    this.chatInput = '';
+    this.messageConversations = this.messageConversations.map((item: MessageConversation) => {
+      if (item.id === conversationId) {
+        item.unreadCount = 0;
+      }
+      return item;
+    });
+  }
+
+  private closeConversation(): void {
+    this.activeConversationId = '';
+    this.chatInput = '';
+  }
+
+  private currentTimeText(): string {
+    const date = new Date();
+    const hour = date.getHours() < 10 ? `0${date.getHours()}` : date.getHours().toString();
+    const minute = date.getMinutes() < 10 ? `0${date.getMinutes()}` : date.getMinutes().toString();
+    return `${hour}:${minute}`;
+  }
+
+  private autoReplyText(conversation: MessageConversation): string {
+    if (conversation.kind === 'group') {
+      if (conversation.id === 'crt-lab') {
+        return '收到，组会材料我也会同步到共享文档里。';
+      }
+      if (conversation.id === 'neurips-2026') {
+        return '好的，rebuttal 清单更新后我会再提醒大家。';
+      }
+      if (conversation.id === 'agent-group') {
+        return '可以，把关键实验设置也贴一下，方便大家复现。';
+      }
+      return '收到，群公告会持续更新。';
+    }
+    if (conversation.id === 'advisor') {
+      return '可以，明天上午我先看你的表格和结论。';
+    }
+    return '好，我看完 README 再和你对一下环境问题。';
+  }
+
+  private sendChatMessage(): void {
+    const conversation = this.currentConversation();
+    if (conversation === undefined) {
+      return;
+    }
+    const text = this.chatInput.trim();
+    if (text.length === 0) {
+      return;
+    }
+    const time = this.currentTimeText();
+    const mineMessage: ChatMessage = {
+      id: `chat-local-${this.nextChatMessageId}`,
+      conversationId: conversation.id,
+      sender: '我',
+      content: text,
+      time,
+      mine: true
+    };
+    const replyMessage: ChatMessage = {
+      id: `chat-local-${this.nextChatMessageId + 1}`,
+      conversationId: conversation.id,
+      sender: conversation.kind === 'group' ? conversation.title : conversation.title,
+      content: this.autoReplyText(conversation),
+      time,
+      mine: false
+    };
+    this.nextChatMessageId += 2;
+    this.chatMessages = this.chatMessages.concat([mineMessage, replyMessage]);
+    this.chatInput = '';
+    this.messageConversations = this.messageConversations.map((item: MessageConversation) => {
+      if (item.id === conversation.id) {
+        item.preview = `我：${text}`;
+        item.time = time;
+        item.unreadCount = 0;
+      }
+      return item;
     });
   }
 
@@ -2171,13 +2339,151 @@ struct Index {
       .alignItems(HorizontalAlign.Start);
     }
     .width('100%')
-    .padding({ left: Space.sm, right: Space.sm, top: Space.md, bottom: Space.md });
+    .padding({ left: Space.sm, right: Space.sm, top: Space.md, bottom: Space.md })
+    .onClick(() => {
+      this.openConversation(item.id);
+    });
+  }
+
+  @Builder
+  private chatBubble(message: ChatMessage): void {
+    Row() {
+      if (message.mine) {
+        Blank();
+      } else {
+        Text(message.sender.length > 0 ? message.sender.substring(0, 1) : '研')
+          .width(32)
+          .height(32)
+          .fontSize(Font.small)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.textOnPrimary)
+          .textAlign(TextAlign.Center)
+          .backgroundColor(AppColor.primary)
+          .borderRadius(16)
+          .margin({ right: Space.sm });
+      }
+
+      Column({ space: Space.xs }) {
+        if (!message.mine) {
+          Text(message.sender)
+            .fontSize(Font.caption)
+            .fontColor(AppColor.textMuted);
+        }
+        Text(message.content)
+          .fontSize(Font.body)
+          .fontColor(message.mine ? AppColor.textOnPrimary : AppColor.textBody)
+          .lineHeight(21)
+          .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+          .backgroundColor(message.mine ? AppColor.primary : AppColor.surface)
+          .borderRadius(Radius.md)
+          .constraintSize({ maxWidth: 280 });
+        Text(message.time)
+          .fontSize(Font.caption)
+          .fontColor(AppColor.textMuted)
+          .textAlign(message.mine ? TextAlign.End : TextAlign.Start)
+          .width('100%');
+      }
+      .alignItems(message.mine ? HorizontalAlign.End : HorizontalAlign.Start);
+
+      if (!message.mine) {
+        Blank();
+      }
+    }
+    .width('100%')
+    .padding({ left: Space.md, right: Space.md, top: Space.xs, bottom: Space.xs });
+  }
+
+  @Builder
+  private chatConversationTab(conversation: MessageConversation): void {
+    Column() {
+      Row({ space: Space.sm }) {
+        Button('‹')
+          .width(34)
+          .height(34)
+          .fontSize(26)
+          .fontColor(AppColor.textTitle)
+          .backgroundColor(AppColor.surface)
+          .borderRadius(17)
+          .onClick(() => {
+            this.closeConversation();
+          });
+        Column({ space: 2 }) {
+          Text(conversation.title)
+            .fontSize(Font.title)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis });
+          Text(conversation.kind === 'group' ? '群聊' : '好友')
+            .fontSize(Font.caption)
+            .fontColor(AppColor.textMuted);
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Center);
+        Blank()
+          .width(34);
+      }
+      .width('100%')
+      .height(60)
+      .padding({ left: Space.lg, right: Space.lg })
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(AppColor.surface);
+
+      Scroll() {
+        Column({ space: Space.sm }) {
+          ForEach(this.conversationMessages(conversation.id), (message: ChatMessage) => {
+            this.chatBubble(message);
+          }, (message: ChatMessage) => message.id);
+        }
+        .width('100%')
+        .padding({ top: Space.lg, bottom: Space.lg });
+      }
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .backgroundColor(AppColor.bg);
+
+      Row({ space: Space.sm }) {
+        TextInput({ placeholder: conversation.kind === 'group' ? '发消息到群聊' : '发消息', text: this.chatInput })
+          .height(42)
+          .fontSize(Font.body)
+          .fontColor(AppColor.textBody)
+          .placeholderColor(AppColor.textMuted)
+          .backgroundColor(AppColor.surfaceSoft)
+          .border({ width: 1, color: AppColor.border })
+          .borderRadius(Radius.pill)
+          .layoutWeight(1)
+          .onChange((value: string) => {
+            this.chatInput = value;
+          });
+        Button('发送')
+          .height(42)
+          .width(70)
+          .fontSize(Font.body)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(AppColor.textOnPrimary)
+          .backgroundColor(AppColor.primary)
+          .borderRadius(Radius.pill)
+          .onClick(() => {
+            this.sendChatMessage();
+          });
+      }
+      .width('100%')
+      .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.md })
+      .backgroundColor(AppColor.surface)
+      .border({ width: { top: 1 }, color: AppColor.border });
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(AppColor.bg);
   }
 
   @Builder
   private messagesTab(): void {
     Column() {
-      Row() {
+      if (this.activeConversationId.length > 0 && this.currentConversation() !== undefined) {
+        this.chatConversationTab(this.currentConversation() as MessageConversation);
+      } else {
+        Row() {
         Row()
           .width(76);
 
@@ -2260,6 +2566,7 @@ struct Index {
       .layoutWeight(1)
       .scrollBar(BarState.Off)
       .backgroundColor(AppColor.bg);
+      }
     }
     .width('100%')
     .height('100%')
