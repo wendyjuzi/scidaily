@@ -54,17 +54,22 @@ http://127.0.0.1:8000/docs
 
 用 DevEco Studio 打开 `E:\project2\scidaily`，选择 `entry`，选择模拟器，然后点击顶部绿色运行按钮。
 
-如果 APP 登录时连不上 PyCharm 后端，需要把前端接口地址从 `127.0.0.1` 改成电脑的局域网 IPv4：
+如果 APP 登录时连不上 PyCharm 后端，需要把本地前端接口地址从 `127.0.0.1` 改成电脑的局域网 IPv4。先复制示例配置：
+
+```powershell
+Copy-Item entry\src\main\ets\config\AppConfig.local.example.ets entry\src\main\ets\config\AppConfig.local.ets
+```
 
 ```ts
-// entry/src/main/ets/config/AppConfig.ets
-export const API_BASE_URL: string = 'http://你的电脑IP:8000/api/v1';
+// entry/src/main/ets/config/AppConfig.local.example.ets
+// 复制为 entry/src/main/ets/config/AppConfig.local.ets
+export const LOCAL_API_BASE_URL: string = 'http://你的电脑IP:8000/api/v1';
 ```
 
 例如电脑 IPv4 是 `192.168.1.23`，就改成：
 
 ```ts
-export const API_BASE_URL: string = 'http://192.168.1.23:8000/api/v1';
+export const LOCAL_API_BASE_URL: string = 'http://192.168.1.23:8000/api/v1';
 ```
 
 如果仍然连不上，检查 Windows 防火墙是否允许 PyCharm/Python 访问 `8000` 端口。
@@ -82,8 +87,9 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 如果 APP 运行在模拟器或真机上，`127.0.0.1` 通常指设备自己，不一定是 Windows 电脑。需要把前端配置里的地址改成电脑局域网 IP：
 
 ```ts
-// entry/src/main/ets/config/AppConfig.ets
-export const API_BASE_URL: string = 'http://你的电脑IP:8000/api/v1';
+// 复制 entry/src/main/ets/config/AppConfig.local.example.ets
+// 为 entry/src/main/ets/config/AppConfig.local.ets
+export const LOCAL_API_BASE_URL: string = 'http://你的电脑IP:8000/api/v1';
 ```
 
 电脑 IP 可在 PowerShell 执行：
@@ -95,10 +101,10 @@ ipconfig
 找到当前 Wi-Fi 或以太网下的 IPv4 地址，例如 `192.168.1.23`，则配置为：
 
 ```ts
-export const API_BASE_URL: string = 'http://192.168.1.23:8000/api/v1';
+export const LOCAL_API_BASE_URL: string = 'http://192.168.1.23:8000/api/v1';
 ```
 
-然后用 DevEco Studio 运行 `entry`。此时登录、注册、个人资料、密码、设置和个人中心列表会优先访问后端，后端不可用时才回退到本地演示数据。
+`AppConfig.local.ets` 已被 git 忽略，每个人只维护自己的本机 IP，不会再互相覆盖。然后用 DevEco Studio 运行 `entry`。此时登录、注册、个人资料、密码、设置和个人中心列表会优先访问后端，后端不可用时才回退到本地演示数据。
 
 ## 鸿蒙构建
 
