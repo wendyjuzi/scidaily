@@ -24,8 +24,8 @@ interface CommentDto {
   user_id: number;
   nickname: string;
   content: string;
-  parent_id?: number;
-  reply_to_nickname?: string;
+  parent_id?: number | null;
+  reply_to_nickname?: string | null;
   like_count: number;
   created_at: string;
 }
@@ -223,6 +223,22 @@ class CommunityService {
     }
   }
 
+  async setCommentLiked(newsId: string, commentId: number, active: boolean): Promise<CommentItem | undefined> {
+    this.ensureLoggedIn();
+    try {
+      const response = await httpClient.request({
+        path: `/comments/${commentId}/like`,
+        method: active ? http.RequestMethod.POST : http.RequestMethod.DELETE,
+        token: authService.getToken()
+      });
+      const item = this.fromCommentDto(JSON.parse(response) as CommentDto);
+      this.upsertLocalComment(newsId, item);
+      return item;
+    } catch (error) {
+      return undefined;
+    }
+  }
+
   async getResearchStats(range: string): Promise<ResearchStatsBundle> {
     this.ensureLoggedIn();
     try {
@@ -352,8 +368,8 @@ class CommunityService {
       userId: dto.user_id,
       nickname: dto.nickname,
       content: dto.content,
-      parentId: dto.parent_id,
-      replyToNickname: dto.reply_to_nickname,
+      parentId: dto.parent_id === null ? undefined : dto.parent_id,
+      replyToNickname: dto.reply_to_nickname === null ? undefined : dto.reply_to_nickname,
       likeCount: dto.like_count,
       createdAt: this.formatDate(dto.created_at)
     };
@@ -440,9 +456,11 @@ class CommunityService {
 
   private getLocalComments(newsId: string): CommentItem[] {
     if (!this.localComments.has(newsId)) {
+      const firstId = this.nextCommentId;
+      const secondId = this.nextCommentId + 1;
       this.localComments.set(newsId, [
         {
-          id: this.nextCommentId,
+          id: firstId,
           newsId,
           userId: 1,
           nickname: '科研日报体验号',
@@ -451,16 +469,38 @@ class CommunityService {
           createdAt: '2026-06-04'
         },
         {
-          id: this.nextCommentId + 1,
+          id: secondId,
           newsId,
           userId: 2,
           nickname: 'AI 方向同学',
           content: '摘要很清楚，建议增加方法和数据集的对比。',
           likeCount: 3,
           createdAt: '2026-06-04'
+        },
+        {
+          id: this.nextCommentId + 2,
+          newsId,
+          userId: 3,
+          nickname: '中南大学同门',
+          content: '可以把失败样例单独列一节，这样复现实验更容易对齐。',
+          parentId: firstId,
+          replyToNickname: '科研日报体验号',
+          likeCount: 5,
+          createdAt: '2026-06-05'
+        },
+        {
+          id: this.nextCommentId + 3,
+          newsId,
+          userId: 4,
+          nickname: '师兄',
+          content: '我也建议加上消融实验，导师看方案时会更直观。',
+          parentId: firstId,
+          replyToNickname: '科研日报体验号',
+          likeCount: 2,
+          createdAt: '2026-06-05'
         }
       ]);
-      this.nextCommentId += 2;
+      this.nextCommentId += 4;
     }
     return this.localComments.get(newsId) ?? [];
   }

@@ -26,6 +26,8 @@ struct DailyPostDetail {
   @State commentHasMore: boolean = false;
   @State commentLoadingMore: boolean = false;
   @State replyToComment: CommentItem | undefined = undefined;
+  @State likedCommentIds: number[] = [];
+  @State expandedReplyParentIds: number[] = [];
   @State toastText: string = '';
 
   aboutToAppear(): void {
@@ -131,37 +133,57 @@ struct DailyPostDetail {
 
   private toggleLike(): void {
     const item = this.post;
-    if (item === undefined || !this.ensureLoggedIn()) {
+    if (item === undefined) {
       return;
     }
-    if (this.liked) {
+    const nextLiked = !this.liked;
+    this.liked = nextLiked;
+    this.likeCount = Math.max(0, this.likeCount + (nextLiked ? 1 : -1));
+    if (!authService.isLoggedIn()) {
+      return;
+    }
+    if (!nextLiked) {
       personalCenterService.removeLikeItem(item.id).then(() => {
-        this.liked = false;
-        this.reloadInteractions(item.id);
+      }).catch((error: Error) => {
+        this.liked = true;
+        this.likeCount += 1;
+        this.toastText = error.message;
       });
       return;
     }
     personalCenterService.addLikeItem(item.id, item.title, item.summary).then(() => {
-      this.liked = true;
-      this.reloadInteractions(item.id);
+    }).catch((error: Error) => {
+      this.liked = false;
+      this.likeCount = Math.max(0, this.likeCount - 1);
+      this.toastText = error.message;
     });
   }
 
   private toggleCollection(): void {
     const item = this.post;
-    if (item === undefined || !this.ensureLoggedIn()) {
+    if (item === undefined) {
       return;
     }
-    if (this.collected) {
+    const nextCollected = !this.collected;
+    this.collected = nextCollected;
+    this.collectionCount = Math.max(0, this.collectionCount + (nextCollected ? 1 : -1));
+    if (!authService.isLoggedIn()) {
+      return;
+    }
+    if (!nextCollected) {
       personalCenterService.removeCollectionItem(item.id).then(() => {
-        this.collected = false;
-        this.reloadInteractions(item.id);
+      }).catch((error: Error) => {
+        this.collected = true;
+        this.collectionCount += 1;
+        this.toastText = error.message;
       });
       return;
     }
     personalCenterService.addCollectionItem(item.id, item.title, item.summary).then(() => {
-      this.collected = true;
-      this.reloadInteractions(item.id);
+    }).catch((error: Error) => {
+      this.collected = false;
+      this.collectionCount = Math.max(0, this.collectionCount - 1);
+      this.toastText = error.message;
     });
   }
 
@@ -201,11 +223,14 @@ struct DailyPostDetail {
       this.toastText = '请输入评论内容';
       return;
     }
-    const parentId = this.replyToComment === undefined ? undefined : this.replyToComment.id;
+    const parentId = this.replyToComment === undefined ? undefined : this.threadParentId(this.replyToComment);
     communityService.addCommentById(item.id, text, parentId).then((comment: CommentItem) => {
       this.commentInput = '';
       this.replyToComment = undefined;
       this.comments = [comment].concat(this.comments);
+      if (comment.parentId !== undefined && !this.isRepliesExpanded(comment.parentId)) {
+        this.expandedReplyParentIds = this.expandedReplyParentIds.concat([comment.parentId]);
+      }
       this.commentCount += 1;
       this.reloadInteractions(item.id);
       this.toastText = '评论已发布';
@@ -232,6 +257,70 @@ struct DailyPostDetail {
     return currentUser !== undefined && currentUser.id === comment.userId;
   }
 
+  private hasParent(comment: CommentItem): boolean {
+    return comment.parentId !== undefined;
+  }
+
+  private threadParentId(comment: CommentItem): number {
+    return comment.parentId === undefined ? comment.id : comment.parentId;
+  }
+
+  private topLevelComments(): CommentItem[] {
+    return this.comments.filter((comment: CommentItem) => !this.hasParent(comment));
+  }
+
+  private repliesForComment(commentId: number): CommentItem[] {
+    return this.comments.filter((comment: CommentItem) => comment.parentId === commentId);
+  }
+
+  private visibleRepliesForComment(commentId: number): CommentItem[] {
+    const replies = this.repliesForComment(commentId);
+    if (this.isRepliesExpanded(commentId)) {
+      return replies;
+    }
+    return replies.slice(0, 1);
+  }
+
+  private isRepliesExpanded(commentId: number): boolean {
+    return this.expandedReplyParentIds.indexOf(commentId) >= 0;
+  }
+
+  private toggleReplies(commentId: number): void {
+    if (this.isRepliesExpanded(commentId)) {
+      this.expandedReplyParentIds = this.expandedReplyParentIds.filter((id: number) => id !== commentId);
+      return;
+    }
+    this.expandedReplyParentIds = this.expandedReplyParentIds.concat([commentId]);
+  }
+
+  private isCommentLiked(commentId: number): boolean {
+    return this.likedCommentIds.indexOf(commentId) >= 0;
+  }
+
+  private toggleCommentLike(comment: CommentItem): void {
+    if (!this.ensureLoggedIn()) {
+      return;
+    }
+    const item = this.post;
+    const active = this.isCommentLiked(comment.id);
+    this.likedCommentIds = active
+      ? this.likedCommentIds.filter((id: number) => id !== comment.id)
+      : this.likedCommentIds.concat([comment.id]);
+    this.comments = this.comments.map((item: CommentItem) => {
+      if (item.id === comment.id) {
+        item.likeCount = Math.max(0, item.likeCount + (active ? -1 : 1));
+      }
+      return item;
+    });
+    if (item !== undefined) {
+      communityService.setCommentLiked(item.id, comment.id, !active).then((synced: CommentItem | undefined) => {
+        if (synced !== undefined) {
+          this.comments = this.comments.map((current: CommentItem) => current.id === synced.id ? synced : current);
+        }
+      });
+    }
+  }
+
   @Builder
   private tagChip(tag: string): void {
     Text(`#${tag}`)
@@ -244,16 +333,41 @@ struct DailyPostDetail {
   }
 
   @Builder
-  private actionButton(title: string, active: boolean, action: () => void): void {
-    Button(title)
+  private likeActionButton(): void {
+    Row() {
+      Text(this.liked ? `已点赞 ${this.likeCount}` : `点赞 ${this.likeCount}`)
+        .fontSize(Font.body)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.liked ? AppColor.textOnPrimary : AppColor.textBody);
+    }
       .height(42)
       .layoutWeight(1)
-      .fontSize(Font.body)
-      .fontWeight(FontWeight.Medium)
-      .fontColor(active ? AppColor.textOnPrimary : AppColor.textBody)
-      .backgroundColor(active ? AppColor.primary : AppColor.surfaceSoft)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(this.liked ? AppColor.primary : AppColor.surfaceSoft)
       .borderRadius(Radius.lg)
-      .onClick(action);
+      .onClick(() => {
+        this.toggleLike();
+      });
+  }
+
+  @Builder
+  private collectionActionButton(): void {
+    Row() {
+      Text(this.collected ? `已收藏 ${this.collectionCount}` : `收藏 ${this.collectionCount}`)
+        .fontSize(Font.body)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.collected ? AppColor.textOnPrimary : AppColor.textBody);
+    }
+      .height(42)
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(this.collected ? AppColor.primary : AppColor.surfaceSoft)
+      .borderRadius(Radius.lg)
+      .onClick(() => {
+        this.toggleCollection();
+      });
   }
 
   @Builder
@@ -271,17 +385,36 @@ struct DailyPostDetail {
   }
 
   @Builder
-  private commentRow(comment: CommentItem): void {
-    Row({ space: Space.md }) {
+  private commentLikeAction(comment: CommentItem): void {
+    Column({ space: 2 }) {
+      Text(this.isCommentLiked(comment.id) ? '♥' : '♡')
+        .fontSize(22)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.isCommentLiked(comment.id) ? AppColor.danger : AppColor.textMuted)
+        .lineHeight(22);
+      Text(comment.likeCount.toString())
+        .fontSize(Font.caption)
+        .fontColor(this.isCommentLiked(comment.id) ? AppColor.danger : AppColor.textMuted);
+    }
+    .width(42)
+    .alignItems(HorizontalAlign.Center)
+    .onClick(() => {
+      this.toggleCommentLike(comment);
+    });
+  }
+
+  @Builder
+  private commentRow(comment: CommentItem, isReply: boolean): void {
+    Row({ space: isReply ? Space.sm : Space.md }) {
       Text(comment.nickname.length > 0 ? comment.nickname.substring(0, 1) : '研')
-        .width(34)
-        .height(34)
+        .width(isReply ? 28 : 34)
+        .height(isReply ? 28 : 34)
         .fontSize(Font.small)
         .fontWeight(FontWeight.Bold)
         .fontColor(AppColor.textOnPrimary)
         .textAlign(TextAlign.Center)
-        .backgroundColor(AppColor.accent)
-        .borderRadius(17);
+        .backgroundColor(isReply ? AppColor.textMuted : AppColor.accent)
+        .borderRadius(isReply ? 14 : 17);
       Column({ space: Space.xs }) {
         Row() {
           Text(comment.nickname)
@@ -300,14 +433,11 @@ struct DailyPostDetail {
             .fontColor(AppColor.accentStrong);
         }
         Text(comment.content)
-          .fontSize(Font.body)
+          .fontSize(isReply ? Font.small : Font.body)
           .fontColor(AppColor.textBody)
-          .lineHeight(20)
+          .lineHeight(isReply ? 19 : 20)
           .width('100%');
         Row({ space: Space.md }) {
-          Text(`赞 ${comment.likeCount}`)
-            .fontSize(Font.caption)
-            .fontColor(AppColor.textMuted);
           Text('回复')
             .fontSize(Font.caption)
             .fontColor(AppColor.accentStrong)
@@ -328,9 +458,37 @@ struct DailyPostDetail {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start);
+      this.commentLikeAction(comment);
     }
     .width('100%')
-    .padding({ top: Space.md, bottom: Space.md });
+    .padding({ top: isReply ? Space.sm : Space.md, bottom: isReply ? Space.sm : Space.md });
+  }
+
+  @Builder
+  private commentThread(comment: CommentItem): void {
+    Column({ space: Space.xs }) {
+      this.commentRow(comment, false);
+      if (this.repliesForComment(comment.id).length > 0) {
+        Column({ space: Space.xs }) {
+          ForEach(this.visibleRepliesForComment(comment.id), (reply: CommentItem) => {
+            this.commentRow(reply, true);
+          }, (reply: CommentItem) => reply.id.toString());
+          if (this.repliesForComment(comment.id).length > 1) {
+            Text(this.isRepliesExpanded(comment.id) ? '收起回复' : `展开 ${this.repliesForComment(comment.id).length - 1} 条回复`)
+              .fontSize(Font.small)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(AppColor.textMuted)
+              .padding({ top: Space.xs, bottom: Space.xs })
+              .onClick(() => {
+                this.toggleReplies(comment.id);
+              });
+          }
+        }
+        .width('100%')
+        .padding({ left: 46 });
+      }
+    }
+    .width('100%');
   }
 
   build() {
@@ -523,8 +681,8 @@ struct DailyPostDetail {
                   .textAlign(TextAlign.Center)
                   .padding(Space.md);
               } else {
-                ForEach(this.comments, (comment: CommentItem) => {
-                  this.commentRow(comment);
+                ForEach(this.topLevelComments(), (comment: CommentItem) => {
+                  this.commentThread(comment);
                 }, (comment: CommentItem) => comment.id.toString());
                 if (this.commentHasMore) {
                   Button(this.commentLoadingMore ? '加载中...' : '加载更多评论')
@@ -560,12 +718,8 @@ struct DailyPostDetail {
         .scrollBar(BarState.Off);
 
         Row({ space: Space.sm }) {
-          this.actionButton(this.liked ? `已点赞 ${this.likeCount}` : `点赞 ${this.likeCount}`, this.liked, () => {
-            this.toggleLike();
-          });
-          this.actionButton(this.collected ? `已收藏 ${this.collectionCount}` : `收藏 ${this.collectionCount}`, this.collected, () => {
-            this.toggleCollection();
-          });
+          this.likeActionButton();
+          this.collectionActionButton();
         }
         .width('100%')
         .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.md })

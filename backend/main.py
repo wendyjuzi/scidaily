@@ -151,6 +151,22 @@ def delete_news_comment(comment_id: int, current_user: UserProfile = Depends(get
     return ApiMessage(message="Comment deleted")
 
 
+@app.post("/api/v1/comments/{comment_id}/like", response_model=CommentItem)
+def like_news_comment(comment_id: int, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.like_comment(comment_id, current_user.id)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.delete("/api/v1/comments/{comment_id}/like", response_model=CommentItem)
+def unlike_news_comment(comment_id: int, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.unlike_comment(comment_id, current_user.id)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
 @app.get("/api/v1/categories", response_model=CategoryResponse)
 def categories():
     return CategoryResponse(items=get_categories())

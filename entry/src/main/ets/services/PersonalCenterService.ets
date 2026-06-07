@@ -131,6 +131,7 @@ class PersonalCenterService {
       status: '已浏览'
     }
   ];
+  private follows: PersonalItem[] = [];
   private privacy: PrivacySettings = {
     showEmail: false,
     showResearchStats: true,
@@ -571,7 +572,7 @@ class PersonalCenterService {
         }
         throw globalErrorHandler.network('交互状态加载失败。');
       }
-      return false;
+      return this.hasLocalItem(this.listForAction(type), itemId);
     }
   }
 
@@ -582,6 +583,7 @@ class PersonalCenterService {
       title,
       summary
     };
+    this.upsertLocalActionItem(type, itemId, title, summary);
     try {
       await httpClient.request({
         path: this.pathForAction(type),
@@ -601,6 +603,7 @@ class PersonalCenterService {
 
   private async removeActionItem(type: string, itemId: string): Promise<void> {
     this.ensureLoggedIn();
+    this.removeLocalItem(this.listForAction(type), itemId);
     try {
       await httpClient.request({
         path: `${this.pathForAction(type)}/${itemId}`,
@@ -615,6 +618,52 @@ class PersonalCenterService {
         throw globalErrorHandler.network('交互取消失败。');
       }
     }
+  }
+
+  private listForAction(type: string): PersonalItem[] {
+    switch (type) {
+      case 'collections':
+        return this.collections;
+      case 'likes':
+        return this.likes;
+      case 'follows':
+        return this.follows;
+      case 'history':
+        return this.history;
+      case 'posts':
+        return this.posts;
+      default:
+        return this.history;
+    }
+  }
+
+  private statusForAction(type: string): string {
+    switch (type) {
+      case 'collections':
+        return '已收藏';
+      case 'likes':
+        return '已点赞';
+      case 'follows':
+        return '已关注';
+      case 'history':
+        return '已浏览';
+      case 'posts':
+        return '已发布';
+      default:
+        return '已同步';
+    }
+  }
+
+  private upsertLocalActionItem(type: string, itemId: string, title: string, summary: string): void {
+    const list = this.listForAction(type);
+    this.removeLocalItem(list, itemId);
+    list.unshift({
+      id: itemId,
+      title,
+      summary,
+      createdAt: this.todayText(),
+      status: this.statusForAction(type)
+    });
   }
 
   private fromStatsDto(dto: PersonalStatsDto): PersonalStats {

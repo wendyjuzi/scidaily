@@ -253,6 +253,15 @@ class AppStore:
                 FOREIGN KEY(parent_id) REFERENCES comments(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS comment_likes (
+                comment_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (comment_id, user_id),
+                FOREIGN KEY(comment_id) REFERENCES comments(id) ON DELETE CASCADE,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -1790,6 +1799,80 @@ class AppStore:
             """,
             (comment_id,),
         ).fetchone()
+        return self._comment_from_row(row)
+
+    def like_comment(self, comment_id: int, user_id: int) -> CommentItem:
+        row = self.conn.execute(
+            "SELECT id, news_id, user_id, content FROM comments WHERE id = ?",
+            (comment_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("Comment not found")
+
+        created_at = now_text()
+        cursor = self.conn.execute(
+            """
+            INSERT OR IGNORE INTO comment_likes (comment_id, user_id, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (comment_id, user_id, created_at),
+        )
+        if cursor.rowcount > 0:
+            self.conn.execute(
+                "UPDATE comments SET like_count = like_count + 1 WHERE id = ?",
+                (comment_id,),
+            )
+            owner_id = int(row["user_id"])
+            if owner_id != user_id:
+                liker = self.get_user(user_id)
+                self._add_notification(
+                    user_id=owner_id,
+                    notice_type="like",
+                    title="评论收到点赞",
+                    content=f"{liker.nickname} 点赞了你的评论：{row['content'][:60]}",
+                    related_item_id=row["news_id"],
+                )
+        self.conn.commit()
+        return self.get_comment(comment_id)
+
+    def unlike_comment(self, comment_id: int, user_id: int) -> CommentItem:
+        row = self.conn.execute("SELECT id FROM comments WHERE id = ?", (comment_id,)).fetchone()
+        if row is None:
+            raise ValueError("Comment not found")
+
+        cursor = self.conn.execute(
+            "DELETE FROM comment_likes WHERE comment_id = ? AND user_id = ?",
+            (comment_id, user_id),
+        )
+        if cursor.rowcount > 0:
+            self.conn.execute(
+                """
+                UPDATE comments
+                SET like_count = CASE WHEN like_count > 0 THEN like_count - 1 ELSE 0 END
+                WHERE id = ?
+                """,
+                (comment_id,),
+            )
+        self.conn.commit()
+        return self.get_comment(comment_id)
+
+    def get_comment(self, comment_id: int) -> CommentItem:
+        row = self.conn.execute(
+            """
+            SELECT
+                comments.*,
+                users.nickname AS nickname,
+                parent_users.nickname AS reply_to_nickname
+            FROM comments
+            JOIN users ON users.id = comments.user_id
+            LEFT JOIN comments AS parent_comments ON parent_comments.id = comments.parent_id
+            LEFT JOIN users AS parent_users ON parent_users.id = parent_comments.user_id
+            WHERE comments.id = ?
+            """,
+            (comment_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("Comment not found")
         return self._comment_from_row(row)
 
     def delete_comment(self, comment_id: int, user_id: int) -> None:
