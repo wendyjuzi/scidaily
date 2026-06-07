@@ -55,6 +55,7 @@ interface ChatMessage {
 @Entry
 @Component
 struct Index {
+  private collegeScroller: Scroller = new Scroller();
   @State posts: DailyPost[] = [];
   @State leftPosts: DailyPost[] = [];
   @State rightPosts: DailyPost[] = [];
@@ -251,6 +252,14 @@ struct Index {
       followerText: '3.1 万同学关注'
     },
     {
+      id: 'zju',
+      name: '浙江大学',
+      city: '杭州',
+      tagLine: '机器人、农业科学与数据智能前沿',
+      activeCount: 72,
+      followerText: '2.2 万同学关注'
+    },
+    {
       id: 'sjtu',
       name: '上海交通大学',
       city: '上海',
@@ -259,12 +268,12 @@ struct Index {
       followerText: '2.6 万同学关注'
     },
     {
-      id: 'zju',
-      name: '浙江大学',
-      city: '杭州',
-      tagLine: '机器人、农业科学与数据智能前沿',
-      activeCount: 72,
-      followerText: '2.2 万同学关注'
+      id: 'csu',
+      name: '中南大学',
+      city: '长沙',
+      tagLine: '医学、材料与智能制造科研动态',
+      activeCount: 66,
+      followerText: '1.9 万同学关注'
     }
   ];
   @State collegeNewsItems: CollegeNewsItem[] = [
@@ -327,6 +336,26 @@ struct Index {
       time: '今天 11:25',
       topic: '数据智能',
       heat: 69
+    },
+    {
+      id: 'csu-1',
+      collegeId: 'csu',
+      title: '湘雅医学团队发布临床多模态数据治理指南',
+      summary: '面向课题组数据采集、脱敏标注和模型复现实验，提供可直接落地的流程模板。',
+      source: '湘雅科研办',
+      time: '今天 09:45',
+      topic: '医学 AI',
+      heat: 71
+    },
+    {
+      id: 'csu-2',
+      collegeId: 'csu',
+      title: '粉末冶金研究院开放材料智能设计课题报名',
+      summary: '项目聚焦高性能合金、实验数据管理和机器学习辅助成分筛选，支持跨院系组队。',
+      source: '中南材料学院',
+      time: '昨天 17:30',
+      topic: '材料科学',
+      heat: 63
     }
   ];
   aboutToAppear(): void {
@@ -1454,21 +1483,22 @@ struct Index {
     .borderRadius(Radius.lg)
     .onClick(() => {
       this.selectedCollegeId = college.id;
+      this.collegeScroller.scrollTo({ xOffset: 0, yOffset: 0 });
     });
   }
 
   @Builder
-  private collegeSummaryCard(college: CollegeInfo): void {
+  private collegeSummaryCard(): void {
     Column({ space: Space.md }) {
       Row() {
         Column({ space: Space.xs }) {
-          Text(college.name)
+          Text(this.selectedCollege().name)
             .fontSize(Font.h2)
             .fontWeight(FontWeight.Bold)
             .fontColor(AppColor.textTitle)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis });
-          Text(college.tagLine)
+          Text(this.selectedCollege().tagLine)
             .fontSize(Font.body)
             .fontColor(AppColor.textSecondary)
             .maxLines(2)
@@ -1490,7 +1520,7 @@ struct Index {
 
       Row() {
         Column({ space: 2 }) {
-          Text(college.activeCount.toString())
+          Text(this.selectedCollege().activeCount.toString())
             .fontSize(Font.sub)
             .fontWeight(FontWeight.Bold)
             .fontColor(AppColor.textTitle);
@@ -1501,7 +1531,7 @@ struct Index {
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Center);
         Column({ space: 2 }) {
-          Text(college.followerText)
+          Text(this.selectedCollege().followerText)
             .fontSize(Font.sub)
             .fontWeight(FontWeight.Bold)
             .fontColor(AppColor.textTitle);
@@ -1587,19 +1617,21 @@ struct Index {
   @Builder
   private collegeFeedContent(): void {
     Column({ space: Space.md }) {
-      Scroll() {
+      Scroll(this.collegeScroller) {
         Row({ space: Space.sm }) {
           ForEach(this.colleges, (college: CollegeInfo) => {
             this.collegeChip(college);
           }, (college: CollegeInfo) => college.id);
         }
+        .justifyContent(FlexAlign.Start)
+        .alignItems(VerticalAlign.Center);
       }
       .width('100%')
       .height(62)
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off);
 
-      this.collegeSummaryCard(this.selectedCollege());
+      this.collegeSummaryCard();
 
       Row() {
         Text('校园资讯')
@@ -1617,7 +1649,8 @@ struct Index {
         this.collegeNewsCard(item);
       }, (item: CollegeNewsItem) => item.id);
     }
-    .width('100%');
+    .width('100%')
+    .alignItems(HorizontalAlign.Start);
   }
 
   @Builder
@@ -1726,7 +1759,8 @@ struct Index {
           }
         }
         .width('100%')
-        .padding({ left: Space.sm, right: Space.sm, bottom: Space.md });
+        .padding({ left: Space.sm, right: Space.sm, top: Space.sm, bottom: Space.md })
+        .alignItems(HorizontalAlign.Start);
       }
       .layoutWeight(1)
       .scrollBar(BarState.Off)

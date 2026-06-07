@@ -25,6 +25,7 @@ interface CollegeNewsItem {
 @Entry
 @Component
 struct CollegeCircle {
+  private collegeScroller: Scroller = new Scroller();
   @State selectedCollegeId: string = 'tsinghua';
   @State colleges: CollegeInfo[] = [
     {
@@ -46,6 +47,15 @@ struct CollegeCircle {
       coverUrl: 'https://images.unsplash.com/photo-1576086213369-97a306d36557?auto=format&fit=crop&w=900&q=80'
     },
     {
+      id: 'zju',
+      name: '浙江大学',
+      city: '杭州',
+      tagLine: '机器人、农业科学与数据智能前沿',
+      activeCount: 72,
+      followerText: '2.2 万同学关注',
+      coverUrl: 'https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=900&q=80'
+    },
+    {
       id: 'sjtu',
       name: '上海交通大学',
       city: '上海',
@@ -55,13 +65,13 @@ struct CollegeCircle {
       coverUrl: 'https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?auto=format&fit=crop&w=900&q=80'
     },
     {
-      id: 'zju',
-      name: '浙江大学',
-      city: '杭州',
-      tagLine: '机器人、农业科学与数据智能前沿',
-      activeCount: 72,
-      followerText: '2.2 万同学关注',
-      coverUrl: 'https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=900&q=80'
+      id: 'csu',
+      name: '中南大学',
+      city: '长沙',
+      tagLine: '医学、材料与智能制造科研动态',
+      activeCount: 66,
+      followerText: '1.9 万同学关注',
+      coverUrl: 'https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?auto=format&fit=crop&w=900&q=80'
     }
   ];
   @State newsItems: CollegeNewsItem[] = [
@@ -144,6 +154,26 @@ struct CollegeCircle {
       time: '昨天 20:15',
       topic: '科研机会',
       heat: 51
+    },
+    {
+      id: 'csu-1',
+      collegeId: 'csu',
+      title: '湘雅医学团队发布临床多模态数据治理指南',
+      summary: '面向课题组数据采集、脱敏标注和模型复现实验，提供可直接落地的流程模板。',
+      source: '湘雅科研办',
+      time: '今天 09:45',
+      topic: '医学 AI',
+      heat: 71
+    },
+    {
+      id: 'csu-2',
+      collegeId: 'csu',
+      title: '粉末冶金研究院开放材料智能设计课题报名',
+      summary: '项目聚焦高性能合金、实验数据管理和机器学习辅助成分筛选，支持跨院系组队。',
+      source: '中南材料学院',
+      time: '昨天 17:30',
+      topic: '材料科学',
+      heat: 63
     }
   ];
 
@@ -185,6 +215,7 @@ struct CollegeCircle {
     .borderRadius(Radius.lg)
     .onClick(() => {
       this.selectedCollegeId = college.id;
+      this.collegeScroller.scrollTo({ xOffset: 0, yOffset: 0 });
     });
   }
 
@@ -204,9 +235,9 @@ struct CollegeCircle {
   }
 
   @Builder
-  private collegeSummary(college: CollegeInfo): void {
+  private collegeSummary(): void {
     Column({ space: Space.md }) {
-      Image(college.coverUrl)
+      Image(this.selectedCollege().coverUrl)
         .width('100%')
         .height(154)
         .objectFit(ImageFit.Cover)
@@ -216,13 +247,13 @@ struct CollegeCircle {
       Column({ space: Space.sm }) {
         Row() {
           Column({ space: Space.xs }) {
-            Text(college.name)
+            Text(this.selectedCollege().name)
               .fontSize(Font.h2)
               .fontWeight(FontWeight.Bold)
               .fontColor(AppColor.textTitle)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis });
-            Text(college.tagLine)
+            Text(this.selectedCollege().tagLine)
               .fontSize(Font.body)
               .fontColor(AppColor.textSecondary)
               .maxLines(2)
@@ -243,8 +274,8 @@ struct CollegeCircle {
         .alignItems(VerticalAlign.Top);
 
         Row() {
-          this.statPill('活跃资讯', college.activeCount.toString());
-          this.statPill('关注热度', college.followerText);
+          this.statPill('活跃资讯', this.selectedCollege().activeCount.toString());
+          this.statPill('关注热度', this.selectedCollege().followerText);
           this.statPill('今日更新', this.currentNews().length.toString());
         }
         .width('100%')
@@ -342,13 +373,15 @@ struct CollegeCircle {
       .height(44)
       .alignItems(VerticalAlign.Center);
 
-      Scroll() {
+      Scroll(this.collegeScroller) {
         Row({ space: Space.sm }) {
           ForEach(this.colleges, (college: CollegeInfo) => {
             this.collegeChip(college);
           }, (college: CollegeInfo) => college.id);
         }
-        .padding({ left: Space.lg, right: Space.lg });
+        .padding({ left: Space.lg, right: Space.lg })
+        .justifyContent(FlexAlign.Start)
+        .alignItems(VerticalAlign.Center);
       }
       .width('100%')
       .height(66)
@@ -357,7 +390,7 @@ struct CollegeCircle {
 
       Scroll() {
         Column({ space: Space.lg }) {
-          this.collegeSummary(this.selectedCollege());
+          this.collegeSummary();
 
           Row() {
             Text('校园资讯')
