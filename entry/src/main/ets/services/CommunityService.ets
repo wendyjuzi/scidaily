@@ -310,8 +310,9 @@ class CommunityService {
         }
       }
     }
-    this.localNotifications.forEach((item: NotificationItem) => {
+    this.localNotifications = this.localNotifications.map((item: NotificationItem) => {
       item.isRead = true;
+      return item;
     });
   }
 
@@ -466,7 +467,7 @@ class CommunityService {
 
   private localNotificationBundle(): NotificationBundle {
     return {
-      items: this.localNotifications,
+      items: this.localNotifications.slice(),
       unreadCount: this.localNotifications.filter((item: NotificationItem) => !item.isRead).length
     };
   }

@@ -327,6 +327,13 @@ class AppStore:
         user_id = int(cursor.lastrowid)
         self.conn.execute("INSERT INTO user_settings (user_id) VALUES (?)", (user_id,))
         self.conn.commit()
+        self._add_notification(
+            user_id=user_id,
+            notice_type="system",
+            title="欢迎使用科研日报社区",
+            content="评论、科研统计看板和消息通知已准备就绪。",
+            related_item_id="welcome",
+        )
         if seed_workspace:
             self._seed_user_workspace(user_id)
         return self.get_user(user_id)
@@ -1839,7 +1846,6 @@ class AppStore:
         )
 
     def list_notifications(self, user_id: int) -> NotificationListResponse:
-        self._ensure_system_notice(user_id)
         rows = self.conn.execute(
             """
             SELECT * FROM notifications
@@ -2081,21 +2087,6 @@ class AppStore:
         if notice_type == "comment":
             return bool(row["comment_notice"])
         return bool(row["system_notice"])
-
-    def _ensure_system_notice(self, user_id: int) -> None:
-        existing = self.conn.execute(
-            "SELECT id FROM notifications WHERE user_id = ? AND type = 'system' AND related_item_id = 'welcome'",
-            (user_id,),
-        ).fetchone()
-        if existing:
-            return
-        self._add_notification(
-            user_id=user_id,
-            notice_type="system",
-            title="欢迎使用科研日报社区",
-            content="C 分工模块已接入评论、科研统计看板和消息通知。",
-            related_item_id="welcome",
-        )
 
     def _profile_from_row(self, row: sqlite3.Row) -> UserProfile:
         return UserProfile(

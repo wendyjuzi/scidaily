@@ -47,6 +47,8 @@ struct DailyPostDetail {
   }
 
   private loadInteractionState(item: DailyPost): void {
+    this.reloadInteractions(item.id);
+    this.reloadComments(item.id);
     if (!authService.isLoggedIn()) {
       return;
     }
@@ -62,8 +64,6 @@ struct DailyPostDetail {
     personalCenterService.addHistoryItem(item.id, item.title, item.summary).catch((error: Error) => {
       this.toastText = error.message;
     });
-    this.reloadInteractions(item.id);
-    this.reloadComments(item.id);
   }
 
   private reloadInteractions(postId: string): void {
