@@ -539,6 +539,13 @@ struct Index {
   }
 
   private readNotification(id: number): void {
+    this.messageItems = this.messageItems.map((item: NotificationItem) => {
+      if (item.id === id) {
+        item.isRead = true;
+      }
+      return item;
+    });
+    this.unreadCount = this.messageItems.filter((item: NotificationItem) => !item.isRead).length;
     communityService.markNotificationRead(id).then(() => {
       this.reloadNotifications();
     }).catch((error: Error) => {
@@ -547,6 +554,11 @@ struct Index {
   }
 
   private readAllNotifications(): void {
+    this.messageItems = this.messageItems.map((item: NotificationItem) => {
+      item.isRead = true;
+      return item;
+    });
+    this.unreadCount = 0;
     communityService.markAllNotificationsRead().then(() => {
       this.reloadNotifications();
     }).catch((error: Error) => {
@@ -555,6 +567,8 @@ struct Index {
   }
 
   private clearNotifications(): void {
+    this.messageItems = [];
+    this.unreadCount = 0;
     communityService.clearNotifications().then(() => {
       this.reloadNotifications();
     }).catch((error: Error) => {
@@ -640,6 +654,10 @@ struct Index {
   private closeConversation(): void {
     this.activeConversationId = '';
     this.chatInput = '';
+  }
+
+  private closeNotificationDetail(): void {
+    this.messageMode = 'chat';
   }
 
   private currentTimeText(): string {
@@ -1931,117 +1949,116 @@ struct Index {
   @Builder
   private aiTab(): void {
     Column() {
-      Scroll() {
-        Column({ space: Space.lg }) {
-          Column({ space: Space.xs }) {
-            Text('AI')
-              .fontSize(Font.h1)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(AppColor.textTitle)
-              .width('100%');
-            Text('把科研想法整理成下一步行动')
-              .fontSize(Font.small)
-              .fontColor(AppColor.textSecondary)
-              .width('100%');
+      Column({ space: Space.lg }) {
+        Column({ space: Space.xs }) {
+          Text('AI')
+            .fontSize(Font.h1)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle)
+            .width('100%');
+          Text('把科研想法整理成下一步行动')
+            .fontSize(Font.small)
+            .fontColor(AppColor.textSecondary)
+            .width('100%');
+        }
+        .width('100%');
+
+        Column({ space: Space.md }) {
+          Row({ space: Space.sm }) {
+            this.aiModeChip('paper', '文献速读');
+            this.aiModeChip('topic', '选题建议');
+            this.aiModeChip('experiment', '实验设计');
           }
           .width('100%');
 
+          Text(this.aiModeDescription())
+            .fontSize(Font.small)
+            .fontColor(AppColor.textSecondary)
+            .width('100%');
+
+          TextArea({ placeholder: '输入论文标题、研究想法或实验目标', text: this.aiPrompt })
+            .height(142)
+            .fontSize(Font.body)
+            .fontColor(AppColor.textBody)
+            .placeholderColor(AppColor.textMuted)
+            .lineHeight(22)
+            .backgroundColor(AppColor.surfaceSoft)
+            .border({ width: 1, color: AppColor.border })
+            .borderRadius(Radius.lg)
+            .padding(Space.md)
+            .onChange((value: string) => {
+              this.aiPrompt = value;
+            });
+
+          Button(`生成${this.aiModeName(this.aiMode)}建议`)
+            .height(44)
+            .width('100%')
+            .fontColor(AppColor.textOnPrimary)
+            .fontWeight(FontWeight.Medium)
+            .backgroundColor(AppColor.primary)
+            .borderRadius(Radius.lg)
+            .onClick(() => {
+              this.generateAiAnswer();
+            });
+        }
+        .width('100%')
+        .padding(Space.lg)
+        .backgroundColor(AppColor.surface)
+        .borderRadius(Radius.lg)
+        .border({ width: 1, color: AppColor.border })
+        .shadow(Elevation.card);
+
+        Column({ space: Space.sm }) {
+          Text('常用入口')
+            .fontSize(Font.title)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle)
+            .width('100%');
+          Flex({ wrap: FlexWrap.Wrap }) {
+            this.aiPromptPreset('帮我梳理这篇论文的创新点和可复现实验');
+            this.aiPromptPreset('把单细胞免疫图谱方向整理成一个开题问题');
+            this.aiPromptPreset('为 Retrieval-Augmented Generation 设计一组对照实验');
+          }
+          .width('100%');
+        }
+        .width('100%');
+
+        if (this.aiAnswer.length > 0) {
           Column({ space: Space.md }) {
-            Row({ space: Space.sm }) {
-              this.aiModeChip('paper', '文献速读');
-              this.aiModeChip('topic', '选题建议');
-              this.aiModeChip('experiment', '实验设计');
+            Row() {
+              Text(`${this.aiModeName(this.aiMode)}建议`)
+                .fontSize(Font.title)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(AppColor.textTitle);
+              Blank();
+              Text('本地草稿')
+                .fontSize(Font.caption)
+                .fontColor(AppColor.accentStrong)
+                .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
+                .backgroundColor(AppColor.accentSoft)
+                .borderRadius(Radius.sm);
             }
             .width('100%');
 
-            Text(this.aiModeDescription())
-              .fontSize(Font.small)
-              .fontColor(AppColor.textSecondary)
-              .width('100%');
-
-            TextArea({ placeholder: '输入论文标题、研究想法或实验目标', text: this.aiPrompt })
-              .height(142)
+            Text(this.aiAnswer)
               .fontSize(Font.body)
               .fontColor(AppColor.textBody)
-              .placeholderColor(AppColor.textMuted)
-              .lineHeight(22)
-              .backgroundColor(AppColor.surfaceSoft)
-              .border({ width: 1, color: AppColor.border })
-              .borderRadius(Radius.lg)
-              .padding(Space.md)
-              .onChange((value: string) => {
-                this.aiPrompt = value;
-              });
-
-            Button(`生成${this.aiModeName(this.aiMode)}建议`)
-              .height(44)
-              .width('100%')
-              .fontColor(AppColor.textOnPrimary)
-              .fontWeight(FontWeight.Medium)
-              .backgroundColor(AppColor.primary)
-              .borderRadius(Radius.lg)
-              .onClick(() => {
-                this.generateAiAnswer();
-              });
+              .lineHeight(24)
+              .width('100%');
           }
           .width('100%')
           .padding(Space.lg)
           .backgroundColor(AppColor.surface)
           .borderRadius(Radius.lg)
-          .border({ width: 1, color: AppColor.border })
-          .shadow(Elevation.card);
-
-          Column({ space: Space.sm }) {
-            Text('常用入口')
-              .fontSize(Font.title)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(AppColor.textTitle)
-              .width('100%');
-            Flex({ wrap: FlexWrap.Wrap }) {
-              this.aiPromptPreset('帮我梳理这篇论文的创新点和可复现实验');
-              this.aiPromptPreset('把单细胞免疫图谱方向整理成一个开题问题');
-              this.aiPromptPreset('为 Retrieval-Augmented Generation 设计一组对照实验');
-            }
-            .width('100%');
-          }
-          .width('100%');
-
-          if (this.aiAnswer.length > 0) {
-            Column({ space: Space.md }) {
-              Row() {
-                Text(`${this.aiModeName(this.aiMode)}建议`)
-                  .fontSize(Font.title)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor(AppColor.textTitle);
-                Blank();
-                Text('本地草稿')
-                  .fontSize(Font.caption)
-                  .fontColor(AppColor.accentStrong)
-                  .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
-                  .backgroundColor(AppColor.accentSoft)
-                  .borderRadius(Radius.sm);
-              }
-              .width('100%');
-
-              Text(this.aiAnswer)
-                .fontSize(Font.body)
-                .fontColor(AppColor.textBody)
-                .lineHeight(24)
-                .width('100%');
-            }
-            .width('100%')
-            .padding(Space.lg)
-            .backgroundColor(AppColor.surface)
-            .borderRadius(Radius.lg)
-            .border({ width: 1, color: AppColor.border });
-          }
+          .border({ width: 1, color: AppColor.border });
         }
-        .width('100%')
-        .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.xxl });
       }
-      .height('100%')
-      .scrollBar(BarState.Off)
-      .backgroundColor(AppColor.bg);
+      .width('100%')
+      .layoutWeight(1)
+      .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.xxl })
+      .justifyContent(FlexAlign.Start)
+      .alignItems(HorizontalAlign.Start)
+      .clip(true);
     }
     .width('100%')
     .height('100%')
@@ -2120,6 +2137,7 @@ struct Index {
     .alignItems(HorizontalAlign.Center)
     .onClick(() => {
       this.messageMode = mode;
+      this.activeConversationId = '';
       this.reloadNotifications();
     });
   }
@@ -2225,10 +2243,6 @@ struct Index {
   private notificationPanel(): void {
     Column({ space: Space.md }) {
       Row() {
-        Text(this.messageModeTitle())
-          .fontSize(Font.title)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(AppColor.textTitle);
         Blank();
         Button('全部已读')
           .height(30)
@@ -2272,10 +2286,52 @@ struct Index {
       }
     }
     .width('100%')
-    .padding(Space.md)
-    .backgroundColor(AppColor.surface)
-    .borderRadius(Radius.lg)
-    .border({ width: 1, color: AppColor.border });
+    .padding({ left: Space.md, right: Space.md, bottom: Space.xl });
+  }
+
+  @Builder
+  private notificationDetailTab(): void {
+    Column() {
+      Row({ space: Space.sm }) {
+        Button('返回')
+          .width(64)
+          .height(34)
+          .fontSize(Font.small)
+          .fontColor(AppColor.textTitle)
+          .backgroundColor(AppColor.surfaceSoft)
+          .borderRadius(Radius.pill)
+          .onClick(() => {
+            this.closeNotificationDetail();
+          });
+        Text(this.messageModeTitle())
+          .fontSize(Font.h2)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.textTitle)
+          .textAlign(TextAlign.Center)
+          .layoutWeight(1);
+        Blank()
+          .width(64);
+      }
+      .width('100%')
+      .height(60)
+      .padding({ left: Space.lg, right: Space.lg })
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(AppColor.surface);
+
+      Column() {
+        this.notificationPanel();
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Start)
+      .alignItems(HorizontalAlign.Start)
+      .clip(true)
+      .backgroundColor(AppColor.bg);
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Start)
+    .backgroundColor(AppColor.bg);
   }
 
   @Builder
@@ -2397,13 +2453,13 @@ struct Index {
   private chatConversationTab(conversation: MessageConversation): void {
     Column() {
       Row({ space: Space.sm }) {
-        Button('‹')
-          .width(34)
+        Button('返回')
+          .width(64)
           .height(34)
-          .fontSize(26)
+          .fontSize(Font.small)
           .fontColor(AppColor.textTitle)
-          .backgroundColor(AppColor.surface)
-          .borderRadius(17)
+          .backgroundColor(AppColor.surfaceSoft)
+          .borderRadius(Radius.pill)
           .onClick(() => {
             this.closeConversation();
           });
@@ -2421,7 +2477,7 @@ struct Index {
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Center);
         Blank()
-          .width(34);
+          .width(64);
       }
       .width('100%')
       .height(60)
@@ -2429,17 +2485,17 @@ struct Index {
       .alignItems(VerticalAlign.Center)
       .backgroundColor(AppColor.surface);
 
-      Scroll() {
-        Column({ space: Space.sm }) {
-          ForEach(this.conversationMessages(conversation.id), (message: ChatMessage) => {
-            this.chatBubble(message);
-          }, (message: ChatMessage) => message.id);
-        }
-        .width('100%')
-        .padding({ top: Space.lg, bottom: Space.lg });
+      Column({ space: Space.sm }) {
+        ForEach(this.conversationMessages(conversation.id), (message: ChatMessage) => {
+          this.chatBubble(message);
+        }, (message: ChatMessage) => message.id);
       }
+      .width('100%')
       .layoutWeight(1)
-      .scrollBar(BarState.Off)
+      .padding({ top: Space.lg, bottom: Space.lg })
+      .justifyContent(FlexAlign.Start)
+      .alignItems(HorizontalAlign.Start)
+      .clip(true)
       .backgroundColor(AppColor.bg);
 
       Row({ space: Space.sm }) {
@@ -2474,6 +2530,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+    .justifyContent(FlexAlign.Start)
     .backgroundColor(AppColor.bg);
   }
 
@@ -2482,6 +2539,8 @@ struct Index {
     Column() {
       if (this.activeConversationId.length > 0 && this.currentConversation() !== undefined) {
         this.chatConversationTab(this.currentConversation() as MessageConversation);
+      } else if (this.messageMode !== 'chat') {
+        this.notificationDetailTab();
       } else {
         Row() {
         Row()
@@ -2527,10 +2586,6 @@ struct Index {
           }
           .width('100%')
           .padding({ top: Space.lg, bottom: Space.lg });
-
-          if (this.messageMode !== 'chat') {
-            this.notificationPanel();
-          }
 
           Text('会话')
             .fontSize(Font.title)
