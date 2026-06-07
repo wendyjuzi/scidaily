@@ -491,7 +491,8 @@ class DailyPostService {
   }
 
   private fromPageDto(dto: DailyPostListDto): DailyPostPage {
-    const items = dto.items.map((item: DailyPostDto) => this.fromPostDto(item));
+    const items = dto.items.map((item: DailyPostDto) => this.fromPostDto(item))
+      .filter((item: DailyPost) => !this.isPlaceholderPost(item));
     items.forEach((item: DailyPost) => {
       this.upsertLocal(item);
     });
@@ -521,6 +522,23 @@ class DailyPostService {
       updatedAt: dto.updated_at,
       publishedAt: dto.published_at
     };
+  }
+
+  private isPlaceholderPost(item: DailyPost): boolean {
+    return this.isPlaceholderText(item.title) && this.isPlaceholderText(item.summary);
+  }
+
+  private isPlaceholderText(value: string): boolean {
+    const text = value.trim();
+    if (text.length < 3) {
+      return false;
+    }
+    for (let index = 0; index < text.length; index += 1) {
+      if (text.charAt(index) !== '?') {
+        return false;
+      }
+    }
+    return true;
   }
 
   private fromCategoryDto(dto: TopicCategoryDto): TopicCategory {

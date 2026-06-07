@@ -74,6 +74,8 @@ class AppStore:
         self.conn.execute("PRAGMA foreign_keys=ON;")
         self._create_tables()
         self._seed_demo_data()
+        self._cleanup_placeholder_daily_posts()
+        self._cleanup_placeholder_papers()
         self._seed_research_daily_data()
         self._seed_paper_library()
 
@@ -1436,6 +1438,50 @@ class AppStore:
             self.create_daily_post(user_id, sample)
             existing_titles.add(sample.title)
             post_count += 1
+
+    def _is_placeholder_text(self, value: str) -> bool:
+        text = value.strip()
+        return len(text) >= 3 and re.fullmatch(r"\?+", text) is not None
+
+    def _cleanup_placeholder_daily_posts(self) -> None:
+        rows = self.conn.execute(
+            """
+            SELECT id, title, summary
+            FROM daily_posts
+            """
+        ).fetchall()
+        placeholder_ids = [
+            row["id"]
+            for row in rows
+            if self._is_placeholder_text(row["title"]) and self._is_placeholder_text(row["summary"])
+        ]
+        if not placeholder_ids:
+            return
+        self.conn.executemany(
+            "DELETE FROM daily_posts WHERE id = ?",
+            [(post_id,) for post_id in placeholder_ids],
+        )
+        self.conn.commit()
+
+    def _cleanup_placeholder_papers(self) -> None:
+        rows = self.conn.execute(
+            """
+            SELECT id, title, abstract
+            FROM papers
+            """
+        ).fetchall()
+        placeholder_ids = [
+            row["id"]
+            for row in rows
+            if self._is_placeholder_text(row["title"]) and self._is_placeholder_text(row["abstract"])
+        ]
+        if not placeholder_ids:
+            return
+        self.conn.executemany(
+            "DELETE FROM papers WHERE id = ?",
+            [(paper_id,) for paper_id in placeholder_ids],
+        )
+        self.conn.commit()
 
     def _seed_paper_library(self) -> None:
         paper_count = self.conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0]

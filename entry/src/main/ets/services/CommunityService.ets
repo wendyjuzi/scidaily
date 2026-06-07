@@ -42,6 +42,27 @@ interface CommentCreateDto {
   parent_id?: number;
 }
 
+interface CommentContext {
+  title: string;
+  summary: string;
+  tagNames: string[];
+}
+
+interface CommentSeed {
+  firstNickname: string;
+  firstContent: string;
+  firstLikes: number;
+  secondNickname: string;
+  secondContent: string;
+  secondLikes: number;
+  firstReplyNickname: string;
+  firstReplyContent: string;
+  firstReplyLikes: number;
+  secondReplyNickname: string;
+  secondReplyContent: string;
+  secondReplyLikes: number;
+}
+
 interface ResearchStatsPointDto {
   label: string;
   daily_count: number;
@@ -74,6 +95,10 @@ interface NotificationListDto {
 
 class CommunityService {
   private localComments: Map<string, CommentItem[]> = new Map<string, CommentItem[]>();
+  private commentContexts: Map<string, CommentContext> = new Map<string, CommentContext>();
+  private locallyReadNotificationIds: number[] = [];
+  private allNotificationsReadLocally: boolean = false;
+  private notificationsClearedLocally: boolean = false;
   private localNotifications: NotificationItem[] = [
     {
       id: 1,
@@ -124,6 +149,14 @@ class CommunityService {
   private nextCommentId: number = 100;
   private nextNotificationId: number = 6;
 
+  setCommentContext(newsId: string, title: string, summary: string, tagNames: string[] = []): void {
+    this.commentContexts.set(newsId, {
+      title,
+      summary,
+      tagNames
+    });
+  }
+
   async getInteractionSummary(newsId: string): Promise<InteractionSummary> {
     const localSummary: InteractionSummary = {
       likeCount: 0,
@@ -154,7 +187,7 @@ class CommunityService {
       });
       const dto = JSON.parse(response) as CommentListDto;
       const items = this.fromCommentListDto(dto);
-      if (page === 1) {
+      if (page === 1 && items.length > 0) {
         this.localComments.set(newsId, items);
       }
       return items;
@@ -266,7 +299,12 @@ class CommunityService {
         method: http.RequestMethod.GET,
         token: authService.getToken()
       });
-      return this.fromNotificationListDto(JSON.parse(response) as NotificationListDto);
+      if (this.notificationsClearedLocally) {
+        return this.localNotificationBundle();
+      }
+      const bundle = this.fromNotificationListDto(JSON.parse(response) as NotificationListDto);
+      this.localNotifications = bundle.items;
+      return this.localNotificationBundle();
     } catch (error) {
       if (!(error instanceof AppException) || error.code !== AppErrorCode.Network) {
         if (error instanceof Error) {
@@ -279,6 +317,13 @@ class CommunityService {
 
   async markNotificationRead(id: number): Promise<void> {
     this.ensureLoggedIn();
+    this.rememberNotificationRead(id);
+    this.localNotifications = this.localNotifications.map((item: NotificationItem) => {
+      if (item.id === id) {
+        return this.withNotificationReadState(item, true);
+      }
+      return item;
+    });
     try {
       await httpClient.request({
         path: `/users/me/notifications/${id}/read`,
@@ -292,16 +337,12 @@ class CommunityService {
         }
       }
     }
-    this.localNotifications = this.localNotifications.map((item: NotificationItem) => {
-      if (item.id === id) {
-        item.isRead = true;
-      }
-      return item;
-    });
   }
 
   async markAllNotificationsRead(): Promise<void> {
     this.ensureLoggedIn();
+    this.allNotificationsReadLocally = true;
+    this.localNotifications = this.localNotifications.map((item: NotificationItem) => this.withNotificationReadState(item, true));
     try {
       await httpClient.request({
         path: '/users/me/notifications/read-all',
@@ -315,14 +356,12 @@ class CommunityService {
         }
       }
     }
-    this.localNotifications = this.localNotifications.map((item: NotificationItem) => {
-      item.isRead = true;
-      return item;
-    });
   }
 
   async clearNotifications(): Promise<void> {
     this.ensureLoggedIn();
+    this.notificationsClearedLocally = true;
+    this.localNotifications = [];
     try {
       await httpClient.request({
         path: '/users/me/notifications',
@@ -336,7 +375,6 @@ class CommunityService {
         }
       }
     }
-    this.localNotifications = [];
   }
 
   private ensureLoggedIn(): void {
@@ -397,13 +435,14 @@ class CommunityService {
   private fromNotificationListDto(dto: NotificationListDto): NotificationBundle {
     const items: NotificationItem[] = [];
     dto.items.forEach((item: NotificationDto) => {
+      const isRead = item.is_read || this.allNotificationsReadLocally || this.locallyReadNotificationIds.indexOf(item.id) >= 0;
       items.push({
         id: item.id,
         type: item.type,
         title: item.title,
         content: item.content,
         relatedItemId: item.related_item_id,
-        isRead: item.is_read,
+        isRead,
         createdAt: this.formatDate(item.created_at)
       });
     });
@@ -429,7 +468,7 @@ class CommunityService {
     }).then((response: string) => {
       const dto = JSON.parse(response) as CommentListDto;
       const items = this.fromCommentListDto(dto);
-      if (page === 1) {
+      if (page === 1 && items.length > 0) {
         this.localComments.set(newsId, items);
       }
     }).catch(() => {
@@ -458,51 +497,151 @@ class CommunityService {
     if (!this.localComments.has(newsId)) {
       const firstId = this.nextCommentId;
       const secondId = this.nextCommentId + 1;
+      const seed = this.commentSeedFor(newsId);
       this.localComments.set(newsId, [
         {
           id: firstId,
           newsId,
           userId: 1,
-          nickname: '科研日报体验号',
-          content: '这条内容适合放进本周文献复盘，后续可以继续补实验记录。',
-          likeCount: 8,
+          nickname: seed.firstNickname,
+          content: seed.firstContent,
+          likeCount: seed.firstLikes,
           createdAt: '2026-06-04'
         },
         {
           id: secondId,
           newsId,
           userId: 2,
-          nickname: 'AI 方向同学',
-          content: '摘要很清楚，建议增加方法和数据集的对比。',
-          likeCount: 3,
+          nickname: seed.secondNickname,
+          content: seed.secondContent,
+          likeCount: seed.secondLikes,
           createdAt: '2026-06-04'
         },
         {
           id: this.nextCommentId + 2,
           newsId,
           userId: 3,
-          nickname: '中南大学同门',
-          content: '可以把失败样例单独列一节，这样复现实验更容易对齐。',
+          nickname: seed.firstReplyNickname,
+          content: seed.firstReplyContent,
           parentId: firstId,
-          replyToNickname: '科研日报体验号',
-          likeCount: 5,
+          replyToNickname: seed.firstNickname,
+          likeCount: seed.firstReplyLikes,
           createdAt: '2026-06-05'
         },
         {
           id: this.nextCommentId + 3,
           newsId,
           userId: 4,
-          nickname: '师兄',
-          content: '我也建议加上消融实验，导师看方案时会更直观。',
+          nickname: seed.secondReplyNickname,
+          content: seed.secondReplyContent,
           parentId: firstId,
-          replyToNickname: '科研日报体验号',
-          likeCount: 2,
+          replyToNickname: seed.firstNickname,
+          likeCount: seed.secondReplyLikes,
           createdAt: '2026-06-05'
         }
       ]);
       this.nextCommentId += 4;
     }
     return this.localComments.get(newsId) ?? [];
+  }
+
+  private commentSeedFor(newsId: string): CommentSeed {
+    const key = this.commentKey(newsId);
+    if (this.containsAny(key, ['rag', 'agent', '智能体', '多模态', '检索', '问答', '大模型', 'transformer'])) {
+      return {
+        firstNickname: '导师',
+        firstContent: '这个复现记录建议把检索命中率、回答正确率和失败原因分开写，后续组会能直接看出卡点。',
+        firstLikes: 18,
+        secondNickname: 'AI 方向同学',
+        secondContent: 'RAG 管线最好补上 chunk 大小、top-k 和引用页码，不然很难判断是召回问题还是生成问题。',
+        secondLikes: 12,
+        firstReplyNickname: '中南大学同门',
+        firstReplyContent: '我也想看错误归因表，尤其是检索没召回和模型答偏这两类。',
+        firstReplyLikes: 9,
+        secondReplyNickname: '师兄',
+        secondReplyContent: '可以把 prompt、模型版本和运行脚本一起放到附录，复现实验会稳很多。',
+        secondReplyLikes: 6
+      };
+    }
+    if (this.containsAny(key, ['单细胞', '免疫', '空间转录组', '组学', '细胞'])) {
+      return {
+        firstNickname: '生命科学同学',
+        firstContent: '这篇可以把 QC 阈值、批次校正和 marker gene 单独列一节，后面复用数据处理流程会更方便。',
+        firstLikes: 16,
+        secondNickname: '师姐',
+        secondContent: '如果能补一张细胞状态转移图就更清楚了，尤其是炎症消退阶段的瞬时状态。',
+        secondLikes: 11,
+        firstReplyNickname: '中南大学同门',
+        firstReplyContent: '我关心参考图谱映射那一步，想看看自动标注和人工检查差多少。',
+        firstReplyLikes: 7,
+        secondReplyNickname: '导师',
+        secondReplyContent: '下次汇报把关键 marker 和功能验证证据放在一起，会更像完整证据链。',
+        secondReplyLikes: 5
+      };
+    }
+    if (this.containsAny(key, ['钙钛矿', '材料', '传感器', '薄膜', '催化', '稳定性', 'xrd', 'sem'])) {
+      return {
+        firstNickname: '材料组同学',
+        firstContent: '稳定性数据建议把湿度、温度和光照拆开记录，不然很难判断到底是哪一项触发衰减。',
+        firstLikes: 14,
+        secondNickname: '师兄',
+        secondContent: '薄膜部分可以加 SEM 和 XRD 的对应编号，和效率曲线放在一起看会更直观。',
+        secondLikes: 10,
+        firstReplyNickname: '中南大学同门',
+        firstReplyContent: '我也觉得要补空白对照，尤其是封装条件这一组。',
+        firstReplyLikes: 8,
+        secondReplyNickname: '导师',
+        secondReplyContent: '下一轮把批次、退火时间和测试环境写成表，方便横向比较。',
+        secondReplyLikes: 6
+      };
+    }
+    if (this.containsAny(key, ['临床', '医学', '影像', '病历', '药物', '诊断'])) {
+      return {
+        firstNickname: '医学 AI 同学',
+        firstContent: '这类内容建议同时写敏感性、特异性和病例级错误分析，光看总体指标容易漏掉偏差。',
+        firstLikes: 13,
+        secondNickname: '师姐',
+        secondContent: '如果涉及电子病历抽取，否定表达和缩写规则最好单独留一栏，后续维护会轻松些。',
+        secondLikes: 9,
+        firstReplyNickname: '中南大学同门',
+        firstReplyContent: '可以再补一个人工校验流程，临床数据这里还是要留痕。',
+        firstReplyLikes: 6,
+        secondReplyNickname: '导师',
+        secondReplyContent: '后面写日报时把数据来源和伦理边界也带上，内容会更完整。',
+        secondReplyLikes: 4
+      };
+    }
+    return {
+      firstNickname: '导师',
+      firstContent: '这篇日报可以继续把研究问题、实验设置和下一步计划拆清楚，后续周报整理会省很多时间。',
+      firstLikes: 10,
+      secondNickname: '中南大学同门',
+      secondContent: '我觉得亮点已经有了，再补一组失败样例和复盘结论会更有参考价值。',
+      secondLikes: 7,
+      firstReplyNickname: '师兄',
+      firstReplyContent: '可以按问题、方法、结果、风险四块整理，组会讨论会更聚焦。',
+      firstReplyLikes: 5,
+      secondReplyNickname: '课题组同学',
+      secondReplyContent: '如果后续有脚本或数据表，也可以挂到共享目录。',
+      secondReplyLikes: 3
+    };
+  }
+
+  private commentKey(newsId: string): string {
+    const context = this.commentContexts.get(newsId);
+    if (context === undefined) {
+      return newsId.toLowerCase();
+    }
+    return `${newsId} ${context.title} ${context.summary} ${context.tagNames.join(' ')}`.toLowerCase();
+  }
+
+  private containsAny(text: string, tokens: string[]): boolean {
+    for (let index = 0; index < tokens.length; index += 1) {
+      if (text.indexOf(tokens[index].toLowerCase()) >= 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private upsertLocalComment(newsId: string, item: CommentItem): void {
@@ -543,6 +682,8 @@ class CommunityService {
   }
 
   private addLocalNotification(title: string, content: string, type: string, relatedItemId: string): void {
+    this.notificationsClearedLocally = false;
+    this.allNotificationsReadLocally = false;
     this.localNotifications.unshift({
       id: this.nextNotificationId,
       type,
@@ -553,6 +694,24 @@ class CommunityService {
       createdAt: this.todayText()
     });
     this.nextNotificationId += 1;
+  }
+
+  private rememberNotificationRead(id: number): void {
+    if (this.locallyReadNotificationIds.indexOf(id) < 0) {
+      this.locallyReadNotificationIds = this.locallyReadNotificationIds.concat([id]);
+    }
+  }
+
+  private withNotificationReadState(item: NotificationItem, isRead: boolean): NotificationItem {
+    return {
+      id: item.id,
+      type: item.type,
+      title: item.title,
+      content: item.content,
+      relatedItemId: item.relatedItemId,
+      isRead,
+      createdAt: item.createdAt
+    };
   }
 
   private todayText(): string {

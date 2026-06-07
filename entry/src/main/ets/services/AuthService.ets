@@ -98,7 +98,8 @@ class AuthService {
     try {
       await httpClient.request({
         path: '/health',
-        method: http.RequestMethod.GET
+        method: http.RequestMethod.GET,
+        timeoutMs: 8000
       });
       return true;
     } catch (error) {

@@ -125,8 +125,10 @@ class PaperService {
   }
 
   private fromPageDto(dto: PaperListDto): PaperPage {
+    const items = dto.items.map((item: PaperDto) => this.fromDto(item))
+      .filter((item: PaperItem) => !this.isPlaceholderPaper(item));
     return {
-      items: dto.items.map((item: PaperDto) => this.fromDto(item)),
+      items,
       nextOffset: dto.next_offset,
       hasMore: dto.has_more
     };
@@ -149,6 +151,23 @@ class PaperService {
       publishedAt: dto.published_at,
       createdAt: dto.created_at
     };
+  }
+
+  private isPlaceholderPaper(item: PaperItem): boolean {
+    return this.isPlaceholderText(item.title) && this.isPlaceholderText(item.abstract);
+  }
+
+  private isPlaceholderText(value: string): boolean {
+    const text = value.trim();
+    if (text.length < 3) {
+      return false;
+    }
+    for (let index = 0; index < text.length; index += 1) {
+      if (text.charAt(index) !== '?') {
+        return false;
+      }
+    }
+    return true;
   }
 }
 

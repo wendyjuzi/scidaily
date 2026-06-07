@@ -1,4 +1,5 @@
 import { router } from '@kit.ArkUI';
+import { API_BASE_URL } from '../config/AppConfig';
 import { authService } from '../services/AuthService';
 import { AppColor, Space, Radius, Font } from '../theme/AppTheme';
 
@@ -102,6 +103,12 @@ struct Login {
         .backgroundColor(AppColor.surface)
         .borderRadius(Radius.md)
         .border({ width: 1, color: AppColor.border });
+        Text(API_BASE_URL)
+          .fontSize(Font.caption)
+          .fontColor(AppColor.textMuted)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%');
       }
       .width('100%');
 

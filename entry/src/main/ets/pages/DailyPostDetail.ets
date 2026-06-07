@@ -53,6 +53,7 @@ struct DailyPostDetail {
   private loadInteractionState(item: DailyPost): void {
     this.likeInteractionTouched = false;
     this.collectionInteractionTouched = false;
+    communityService.setCommentContext(item.id, item.title, item.summary, item.tags.concat(item.tagIds));
     this.reloadInteractions(item.id);
     this.reloadComments(item.id);
     if (!authService.isLoggedIn()) {
