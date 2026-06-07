@@ -125,6 +125,11 @@ class CommunityService {
   private nextNotificationId: number = 6;
 
   async getInteractionSummary(newsId: string): Promise<InteractionSummary> {
+    const localSummary: InteractionSummary = {
+      likeCount: 0,
+      collectionCount: 0,
+      commentCount: this.getLocalComments(newsId).length
+    };
     try {
       const response = await httpClient.request({
         path: `/news/${newsId}/interactions`,
@@ -132,15 +137,16 @@ class CommunityService {
       });
       return this.fromSummaryDto(JSON.parse(response) as InteractionSummaryDto);
     } catch (error) {
-      return {
-        likeCount: 0,
-        collectionCount: 0,
-        commentCount: this.getLocalComments(newsId).length
-      };
+      return localSummary;
     }
   }
 
   async getComments(newsId: string, sort: string = 'latest', page: number = 1, size: number = 20): Promise<CommentItem[]> {
+    const localItems = this.localCommentPage(newsId, sort, page, size);
+    this.syncComments(newsId, sort, page, size);
+    if (localItems.length > 0) {
+      return localItems;
+    }
     try {
       const response = await httpClient.request({
         path: `/news/${newsId}/comments?page=${page}&size=${size}&sort=${sort}`,
@@ -153,12 +159,7 @@ class CommunityService {
       }
       return items;
     } catch (error) {
-      const items = this.getLocalComments(newsId);
-      const offset = (page - 1) * size;
-      if (sort === 'hot') {
-        return items.slice().sort((a: CommentItem, b: CommentItem) => b.likeCount - a.likeCount).slice(offset, offset + size);
-      }
-      return items.slice(offset, offset + size);
+      return localItems;
     }
   }
 
@@ -175,6 +176,14 @@ class CommunityService {
     if (text.length > 200) {
       throw globalErrorHandler.validation('评论内容不能超过 200 字。');
     }
+    const localItem = this.createLocalComment(newsId, text, parentId);
+    this.upsertLocalComment(newsId, localItem);
+    this.addLocalNotification(parentId === undefined ? '评论已发布' : '回复已发布', text, 'comment', newsId);
+    this.syncAddedComment(newsId, text, parentId);
+    return localItem;
+  }
+
+  private async syncAddedComment(newsId: string, text: string, parentId?: number): Promise<void> {
     try {
       const payload: CommentCreateDto = { content: text };
       if (parentId !== undefined) {
@@ -188,30 +197,10 @@ class CommunityService {
       });
       const item = this.fromCommentDto(JSON.parse(response) as CommentDto);
       this.upsertLocalComment(newsId, item);
-      return item;
     } catch (error) {
       if (!(error instanceof AppException) || error.code !== AppErrorCode.Network) {
-        if (error instanceof Error) {
-          throw error;
-        }
+        return;
       }
-      const currentUser = authService.getCurrentUser();
-      const replyTo = parentId !== undefined ? this.getLocalComments(newsId).find((item: CommentItem) => item.id === parentId) : undefined;
-      const item: CommentItem = {
-        id: this.nextCommentId,
-        newsId,
-        userId: currentUser ? currentUser.id : 0,
-        nickname: currentUser ? currentUser.nickname : '本地用户',
-        content: text,
-        parentId,
-        replyToNickname: replyTo ? replyTo.nickname : undefined,
-        likeCount: 0,
-        createdAt: this.todayText()
-      };
-      this.nextCommentId += 1;
-      this.upsertLocalComment(newsId, item);
-      this.addLocalNotification(parentId === undefined ? '评论已发布' : '回复已发布', text, 'comment', newsId);
-      return item;
     }
   }
 
@@ -406,6 +395,47 @@ class CommunityService {
       items,
       unreadCount: dto.unread_count
     };
+  }
+
+  private localCommentPage(newsId: string, sort: string, page: number, size: number): CommentItem[] {
+    const items = this.getLocalComments(newsId);
+    const offset = (page - 1) * size;
+    if (sort === 'hot') {
+      return items.slice().sort((a: CommentItem, b: CommentItem) => b.likeCount - a.likeCount).slice(offset, offset + size);
+    }
+    return items.slice(offset, offset + size);
+  }
+
+  private syncComments(newsId: string, sort: string, page: number, size: number): void {
+    httpClient.request({
+      path: `/news/${newsId}/comments?page=${page}&size=${size}&sort=${sort}`,
+      method: http.RequestMethod.GET
+    }).then((response: string) => {
+      const dto = JSON.parse(response) as CommentListDto;
+      const items = this.fromCommentListDto(dto);
+      if (page === 1) {
+        this.localComments.set(newsId, items);
+      }
+    }).catch(() => {
+    });
+  }
+
+  private createLocalComment(newsId: string, text: string, parentId?: number): CommentItem {
+    const currentUser = authService.getCurrentUser();
+    const replyTo = parentId !== undefined ? this.getLocalComments(newsId).find((item: CommentItem) => item.id === parentId) : undefined;
+    const item: CommentItem = {
+      id: this.nextCommentId,
+      newsId,
+      userId: currentUser ? currentUser.id : 0,
+      nickname: currentUser ? currentUser.nickname : '本地用户',
+      content: text,
+      parentId,
+      replyToNickname: replyTo ? replyTo.nickname : undefined,
+      likeCount: 0,
+      createdAt: this.todayText()
+    };
+    this.nextCommentId += 1;
+    return item;
   }
 
   private getLocalComments(newsId: string): CommentItem[] {

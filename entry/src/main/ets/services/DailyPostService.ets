@@ -176,6 +176,10 @@ class DailyPostService {
   }
 
   async getById(postId: string): Promise<DailyPost> {
+    const localMatch = this.localPosts.find((item: DailyPost) => item.id === postId);
+    if (localMatch !== undefined) {
+      return localMatch;
+    }
     try {
       const response = await httpClient.request({
         path: `/daily-posts/${postId}`,
@@ -185,10 +189,6 @@ class DailyPostService {
     } catch (error) {
       if (!(error instanceof AppException) || error.code !== AppErrorCode.Network) {
         throw error as Error;
-      }
-      const match = this.localPosts.find((item: DailyPost) => item.id === postId);
-      if (match !== undefined) {
-        return match;
       }
       throw globalErrorHandler.network('日报详情加载失败。');
     }
@@ -491,8 +491,12 @@ class DailyPostService {
   }
 
   private fromPageDto(dto: DailyPostListDto): DailyPostPage {
+    const items = dto.items.map((item: DailyPostDto) => this.fromPostDto(item));
+    items.forEach((item: DailyPost) => {
+      this.upsertLocal(item);
+    });
     return {
-      items: dto.items.map((item: DailyPostDto) => this.fromPostDto(item)),
+      items,
       nextOffset: dto.next_offset,
       hasMore: dto.has_more
     };

@@ -7,6 +7,7 @@ export interface RequestConfig {
   method: http.RequestMethod;
   body?: string;
   token?: string;
+  timeoutMs?: number;
 }
 
 interface RequestHeaders {
@@ -44,8 +45,8 @@ class HttpClient {
         extraData: config.body ?? '',
         expectDataType: http.HttpDataType.STRING,
         header: headers,
-        readTimeout: 15000,
-        connectTimeout: 15000
+        readTimeout: config.timeoutMs ?? 3500,
+        connectTimeout: config.timeoutMs ?? 3500
       });
       if (response.responseCode >= 200 && response.responseCode < 300) {
         if (typeof response.result === 'string') {

@@ -202,10 +202,11 @@ struct DailyPostDetail {
       return;
     }
     const parentId = this.replyToComment === undefined ? undefined : this.replyToComment.id;
-    communityService.addCommentById(item.id, text, parentId).then(() => {
+    communityService.addCommentById(item.id, text, parentId).then((comment: CommentItem) => {
       this.commentInput = '';
       this.replyToComment = undefined;
-      this.reloadComments(item.id);
+      this.comments = [comment].concat(this.comments);
+      this.commentCount += 1;
       this.reloadInteractions(item.id);
       this.toastText = '评论已发布';
     }).catch((error: Error) => {
