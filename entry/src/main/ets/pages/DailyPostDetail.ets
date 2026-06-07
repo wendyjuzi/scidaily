@@ -29,6 +29,8 @@ struct DailyPostDetail {
   @State likedCommentIds: number[] = [];
   @State expandedReplyParentIds: number[] = [];
   @State toastText: string = '';
+  private likeInteractionTouched: boolean = false;
+  private collectionInteractionTouched: boolean = false;
 
   aboutToAppear(): void {
     const params = (router.getParams() as Record<string, string> | undefined) ?? {};
@@ -49,16 +51,28 @@ struct DailyPostDetail {
   }
 
   private loadInteractionState(item: DailyPost): void {
+    this.likeInteractionTouched = false;
+    this.collectionInteractionTouched = false;
     this.reloadInteractions(item.id);
     this.reloadComments(item.id);
     if (!authService.isLoggedIn()) {
       return;
     }
     personalCenterService.isLikedItem(item.id).then((active: boolean) => {
-      this.liked = active;
+      if (!this.likeInteractionTouched) {
+        this.liked = active;
+        if (active) {
+          this.likeCount = Math.max(this.likeCount, 1);
+        }
+      }
     });
     personalCenterService.isCollectedItem(item.id).then((active: boolean) => {
-      this.collected = active;
+      if (!this.collectionInteractionTouched) {
+        this.collected = active;
+        if (active) {
+          this.collectionCount = Math.max(this.collectionCount, 1);
+        }
+      }
     });
     personalCenterService.isFollowingItem(this.authorFollowId(item)).then((active: boolean) => {
       this.following = active;
@@ -70,8 +84,12 @@ struct DailyPostDetail {
 
   private reloadInteractions(postId: string): void {
     communityService.getInteractionSummary(postId).then((summary: InteractionSummary) => {
-      this.likeCount = summary.likeCount;
-      this.collectionCount = summary.collectionCount;
+      if (!this.likeInteractionTouched) {
+        this.likeCount = summary.likeCount;
+      }
+      if (!this.collectionInteractionTouched) {
+        this.collectionCount = summary.collectionCount;
+      }
       this.commentCount = summary.commentCount;
     });
   }
@@ -137,6 +155,7 @@ struct DailyPostDetail {
       return;
     }
     const nextLiked = !this.liked;
+    this.likeInteractionTouched = true;
     this.liked = nextLiked;
     this.likeCount = Math.max(0, this.likeCount + (nextLiked ? 1 : -1));
     if (!authService.isLoggedIn()) {
@@ -165,6 +184,7 @@ struct DailyPostDetail {
       return;
     }
     const nextCollected = !this.collected;
+    this.collectionInteractionTouched = true;
     this.collected = nextCollected;
     this.collectionCount = Math.max(0, this.collectionCount + (nextCollected ? 1 : -1));
     if (!authService.isLoggedIn()) {
