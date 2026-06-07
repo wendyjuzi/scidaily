@@ -97,8 +97,7 @@ class CommunityService {
   private localComments: Map<string, CommentItem[]> = new Map<string, CommentItem[]>();
   private commentContexts: Map<string, CommentContext> = new Map<string, CommentContext>();
   private locallyReadNotificationIds: number[] = [];
-  private allNotificationsReadLocally: boolean = false;
-  private notificationsClearedLocally: boolean = false;
+  private locallyClearedNotificationIds: number[] = [];
   private localNotifications: NotificationItem[] = [
     {
       id: 1,
@@ -299,9 +298,6 @@ class CommunityService {
         method: http.RequestMethod.GET,
         token: authService.getToken()
       });
-      if (this.notificationsClearedLocally) {
-        return this.localNotificationBundle();
-      }
       const bundle = this.fromNotificationListDto(JSON.parse(response) as NotificationListDto);
       this.localNotifications = bundle.items;
       return this.localNotificationBundle();
@@ -341,7 +337,9 @@ class CommunityService {
 
   async markAllNotificationsRead(): Promise<void> {
     this.ensureLoggedIn();
-    this.allNotificationsReadLocally = true;
+    this.localNotifications.forEach((item: NotificationItem) => {
+      this.rememberNotificationRead(item.id);
+    });
     this.localNotifications = this.localNotifications.map((item: NotificationItem) => this.withNotificationReadState(item, true));
     try {
       await httpClient.request({
@@ -360,7 +358,9 @@ class CommunityService {
 
   async clearNotifications(): Promise<void> {
     this.ensureLoggedIn();
-    this.notificationsClearedLocally = true;
+    this.localNotifications.forEach((item: NotificationItem) => {
+      this.rememberNotificationCleared(item.id);
+    });
     this.localNotifications = [];
     try {
       await httpClient.request({
@@ -435,20 +435,22 @@ class CommunityService {
   private fromNotificationListDto(dto: NotificationListDto): NotificationBundle {
     const items: NotificationItem[] = [];
     dto.items.forEach((item: NotificationDto) => {
-      const isRead = item.is_read || this.allNotificationsReadLocally || this.locallyReadNotificationIds.indexOf(item.id) >= 0;
-      items.push({
-        id: item.id,
-        type: item.type,
-        title: item.title,
-        content: item.content,
-        relatedItemId: item.related_item_id,
-        isRead,
-        createdAt: this.formatDate(item.created_at)
-      });
+      if (this.locallyClearedNotificationIds.indexOf(item.id) < 0) {
+        const isRead = item.is_read || this.locallyReadNotificationIds.indexOf(item.id) >= 0;
+        items.push({
+          id: item.id,
+          type: item.type,
+          title: item.title,
+          content: item.content,
+          relatedItemId: item.related_item_id,
+          isRead,
+          createdAt: this.formatDate(item.created_at)
+        });
+      }
     });
     return {
       items,
-      unreadCount: dto.unread_count
+      unreadCount: items.filter((item: NotificationItem) => !item.isRead).length
     };
   }
 
@@ -682,8 +684,6 @@ class CommunityService {
   }
 
   private addLocalNotification(title: string, content: string, type: string, relatedItemId: string): void {
-    this.notificationsClearedLocally = false;
-    this.allNotificationsReadLocally = false;
     this.localNotifications.unshift({
       id: this.nextNotificationId,
       type,
@@ -699,6 +699,12 @@ class CommunityService {
   private rememberNotificationRead(id: number): void {
     if (this.locallyReadNotificationIds.indexOf(id) < 0) {
       this.locallyReadNotificationIds = this.locallyReadNotificationIds.concat([id]);
+    }
+  }
+
+  private rememberNotificationCleared(id: number): void {
+    if (this.locallyClearedNotificationIds.indexOf(id) < 0) {
+      this.locallyClearedNotificationIds = this.locallyClearedNotificationIds.concat([id]);
     }
   }
 
