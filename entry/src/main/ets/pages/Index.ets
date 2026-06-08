@@ -3,11 +3,11 @@ import { NotificationBundle, NotificationItem } from '../models/Community';
 import { PaperItem } from '../models/Paper';
 import { ResearchNews } from '../models/ResearchNews';
 import { DailyPost, DailyPostDraft, DailyTemplate, TopicCategory, TopicTag } from '../models/DailyPost';
-import { PersonalStats, UserProfile } from '../models/User';
+import { PersonalItem, PersonalStats, UserProfile } from '../models/User';
 import { authService } from '../services/AuthService';
 import { communityService } from '../services/CommunityService';
 import { newsService } from '../services/NewsService';
-import { dailyPostService } from '../services/DailyPostService';
+import { DailyPostPage, dailyPostService } from '../services/DailyPostService';
 import { paperService } from '../services/PaperService';
 import { personalCenterService } from '../services/PersonalCenterService';
 import { AppColor, Space, Radius, Font, Elevation } from '../theme/AppTheme';
@@ -64,6 +64,8 @@ struct Index {
   @State tags: TopicTag[] = [];
   @State templates: DailyTemplate[] = [];
   @State myPosts: DailyPost[] = [];
+  @State followItems: PersonalItem[] = [];
+  @State followSourcePosts: DailyPost[] = [];
   @State homeChannel: string = 'discover';
   @State selectedCollegeId: string = 'tsinghua';
   @State selectedCategoryId: string = 'all';
@@ -242,6 +244,8 @@ struct Index {
     this.configureMessageSeed();
     this.reloadProfile();
     this.reloadMine();
+    this.reloadFollows();
+    this.reloadFollowPosts();
     this.reloadNotifications();
   }
 
@@ -263,6 +267,8 @@ struct Index {
     });
     this.reloadProfile();
     this.reloadMine();
+    this.reloadFollows();
+    this.reloadFollowPosts();
     this.reloadNotifications();
     this.refreshFeed();
   }
@@ -583,6 +589,27 @@ struct Index {
     }
     dailyPostService.listMine().then((items: DailyPost[]) => {
       this.myPosts = items;
+    });
+  }
+
+  private reloadFollows(): void {
+    if (!authService.isLoggedIn()) {
+      this.followItems = [];
+      return;
+    }
+    personalCenterService.getItems('follows').then((items: PersonalItem[]) => {
+      this.followItems = items;
+    }).catch((error: Error) => {
+      this.toastText = error.message;
+      this.followItems = personalCenterService.getItemsLocal('follows');
+    });
+  }
+
+  private reloadFollowPosts(): void {
+    dailyPostService.listPublished('all', '', 0, 50).then((page: DailyPostPage) => {
+      this.followSourcePosts = page.items;
+    }).catch(() => {
+      this.followSourcePosts = this.posts;
     });
   }
 
@@ -1690,22 +1717,138 @@ struct Index {
   }
 
   @Builder
-  private followFeedContent(): void {
-    Column({ space: Space.md }) {
-      Text('关注动态')
-        .fontSize(Font.title)
+  private followItemCard(item: PersonalItem): void {
+    Row({ space: Space.md }) {
+      Text(item.title.length > 0 ? item.title.substring(0, 1) : '关')
+        .width(44)
+        .height(44)
+        .fontSize(Font.sub)
         .fontWeight(FontWeight.Bold)
-        .fontColor(AppColor.textTitle);
-      Text('你关注的研究者和高校动态会显示在这里。')
-        .fontSize(Font.body)
-        .fontColor(AppColor.textSecondary)
-        .lineHeight(20)
-        .textAlign(TextAlign.Center);
+        .fontColor(AppColor.textOnPrimary)
+        .textAlign(TextAlign.Center)
+        .backgroundColor(AppColor.primary)
+        .borderRadius(22);
+      Column({ space: Space.xs }) {
+        Row() {
+          Text(item.title)
+            .fontSize(Font.sub)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1);
+          Text(item.status)
+            .fontSize(Font.caption)
+            .fontColor(AppColor.accentStrong)
+            .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
+            .backgroundColor(AppColor.accentSoft)
+            .borderRadius(Radius.sm);
+        }
+        .width('100%');
+        Text(item.summary.length > 0 ? item.summary : '关注动态会在这里更新')
+          .fontSize(Font.small)
+          .fontColor(AppColor.textSecondary)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%');
+        Text(item.createdAt)
+          .fontSize(Font.caption)
+          .fontColor(AppColor.textMuted)
+          .width('100%');
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start);
     }
     .width('100%')
-    .height(260)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center);
+    .padding(Space.lg)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: AppColor.border });
+  }
+
+  private followedAuthorIds(): number[] {
+    const ids: number[] = [];
+    this.followItems.forEach((item: PersonalItem) => {
+      if (item.id.startsWith('author-')) {
+        const value = Number(item.id.substring(7));
+        if (!Number.isNaN(value) && ids.indexOf(value) < 0) {
+          ids.push(value);
+        }
+      }
+    });
+    return ids;
+  }
+
+  private followedPosts(): DailyPost[] {
+    const authorIds = this.followedAuthorIds();
+    if (authorIds.length === 0) {
+      return [];
+    }
+    const sourcePosts = this.followSourcePosts.length > 0 ? this.followSourcePosts : this.posts;
+    return sourcePosts.filter((post: DailyPost) => authorIds.indexOf(post.authorId) >= 0);
+  }
+
+  private followedColumnPosts(column: number): DailyPost[] {
+    const result: DailyPost[] = [];
+    this.followedPosts().forEach((post: DailyPost, index: number) => {
+      if (index % 2 === column) {
+        result.push(post);
+      }
+    });
+    return result;
+  }
+
+  @Builder
+  private followFeedContent(): void {
+    if (this.followedPosts().length === 0) {
+      Column({ space: Space.md }) {
+        Text('关注动态')
+          .fontSize(Font.title)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.textTitle);
+        Text(this.followItems.length === 0 ? '你关注的研究者和高校动态会显示在这里。' : '已关注账号暂无新日报。')
+          .fontSize(Font.body)
+          .fontColor(AppColor.textSecondary)
+          .lineHeight(20)
+          .textAlign(TextAlign.Center);
+      }
+      .width('100%')
+      .padding({ top: Space.xxl, bottom: Space.xxl })
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center);
+    } else {
+      Column({ space: Space.md }) {
+        Row() {
+          Text('关注动态')
+            .fontSize(Font.title)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle);
+          Blank();
+          Text(`${this.followedPosts().length} 篇更新`)
+            .fontSize(Font.small)
+            .fontColor(AppColor.textMuted);
+        }
+        .width('100%');
+        Row({ space: Space.sm }) {
+          Column({ space: Space.sm }) {
+            ForEach(this.followedColumnPosts(0), (post: DailyPost, index: number) => {
+              this.waterfallCard(post, index);
+            }, (post: DailyPost) => post.id);
+          }
+          .layoutWeight(1);
+          Column({ space: Space.sm }) {
+            ForEach(this.followedColumnPosts(1), (post: DailyPost, index: number) => {
+              this.waterfallCard(post, index + 3);
+            }, (post: DailyPost) => post.id);
+          }
+          .layoutWeight(1);
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Top);
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start);
+    }
   }
 
   @Builder
@@ -1738,12 +1881,36 @@ struct Index {
         .alignItems(HorizontalAlign.Start)
         .clip(true)
         .backgroundColor(AppColor.bg);
+      } else if (this.homeChannel === 'follow') {
+        Scroll() {
+          Column({ space: Space.md }) {
+            this.followFeedContent();
+            if (this.toastText.length > 0) {
+              Text(this.toastText)
+                .fontSize(Font.small)
+                .fontColor(AppColor.textBody)
+                .maxLines(2)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('100%')
+                .padding(Space.md)
+                .backgroundColor(AppColor.surface)
+                .borderRadius(Radius.md)
+                .border({ width: 1, color: AppColor.border });
+            }
+          }
+          .width('100%')
+          .padding({ left: Space.sm, right: Space.sm, top: Space.sm, bottom: Space.md })
+          .alignItems(HorizontalAlign.Start);
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .edgeEffect(EdgeEffect.None)
+        .clip(true)
+        .backgroundColor(AppColor.bg);
       } else {
         Scroll() {
         Column({ space: Space.md }) {
-          if (this.homeChannel === 'follow') {
-            this.followFeedContent();
-          } else if (this.loading) {
+          if (this.loading) {
             Row({ space: Space.sm }) {
               Column({ space: Space.sm }) {
                 this.skeletonCard(150);
@@ -2851,6 +3018,10 @@ struct Index {
             });
             this.statDivider();
             this.statCell('连续', this.profileStats.continuousDays, () => {
+            });
+            this.statDivider();
+            this.statCell('关注', this.followItems.length, () => {
+              router.pushUrl({ url: 'pages/PersonalList', params: { type: 'follows' } });
             });
           }
           .width('100%')

@@ -182,7 +182,9 @@ class PersonalCenterService {
         method: http.RequestMethod.GET,
         token: authService.getToken()
       });
-      return this.fromListDto(JSON.parse(response) as PersonalListDto);
+      const items = this.fromListDto(JSON.parse(response) as PersonalListDto);
+      this.replaceLocalItems(type, items);
+      return items;
     } catch (error) {
       if (!(error instanceof AppException) || error.code !== AppErrorCode.Network) {
         if (error instanceof Error) {
@@ -204,7 +206,7 @@ class PersonalCenterService {
       case 'likes':
         return this.likes;
       case 'follows':
-        return [];
+        return this.follows;
       case 'history':
         return this.history;
       default:
@@ -663,6 +665,14 @@ class PersonalCenterService {
       summary,
       createdAt: this.todayText(),
       status: this.statusForAction(type)
+    });
+  }
+
+  private replaceLocalItems(type: string, items: PersonalItem[]): void {
+    const list = this.listForAction(type);
+    list.splice(0, list.length);
+    items.forEach((item: PersonalItem) => {
+      list.push(item);
     });
   }
 

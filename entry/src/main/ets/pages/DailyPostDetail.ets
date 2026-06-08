@@ -91,7 +91,7 @@ struct DailyPostDetail {
       if (!this.collectionInteractionTouched) {
         this.collectionCount = summary.collectionCount;
       }
-      this.commentCount = summary.commentCount;
+      this.commentCount = Math.max(this.commentCount, summary.commentCount, this.comments.length);
     });
   }
 
@@ -99,11 +99,15 @@ struct DailyPostDetail {
     this.commentPage = 1;
     communityService.getComments(postId, this.commentSort, 1, 20).then((items: CommentItem[]) => {
       this.comments = items;
-      this.commentCount = Math.max(this.commentCount, items.length);
+      this.commentCount = Math.max(items.length, this.commentCount);
       this.commentHasMore = items.length === 20;
     }).catch((error: Error) => {
       this.toastText = error.message;
     });
+  }
+
+  private displayedCommentCount(): number {
+    return Math.max(this.commentCount, this.comments.length);
   }
 
   private loadMoreComments(): void {
@@ -623,7 +627,7 @@ struct DailyPostDetail {
 
             Column({ space: Space.md }) {
               Row() {
-                Text(`评论 ${this.commentCount}`)
+                Text(`评论 ${this.displayedCommentCount()}`)
                   .fontSize(Font.title)
                   .fontWeight(FontWeight.Bold)
                   .fontColor(AppColor.textTitle);
