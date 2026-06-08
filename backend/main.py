@@ -2,7 +2,7 @@ import base64
 import re
 import secrets
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from app.dependencies import get_current_user
 from app.schemas import (
     ApiMessage,
+    AiWorkbenchRequest,
+    AiWorkbenchResponse,
     AuthResponse,
     CategoryResponse,
     CommentCreateRequest,
@@ -55,6 +57,7 @@ from app.schemas import (
     UserProfile,
     UserUpdateRequest,
 )
+from app.services.ai_service import AiProviderError, ai_mode_title, generate_workbench_answer
 from app.services.news_service import get_categories, get_daily_news, get_news_by_id
 from app.storage import store
 
@@ -105,6 +108,24 @@ def decode_image_content(content_base64: str) -> bytes:
 @app.get("/api/v1/health", response_model=ApiMessage)
 def health():
     return ApiMessage(message="SciDaily API is running")
+
+
+@app.post("/api/v1/ai/workbench", response_model=AiWorkbenchResponse)
+def ai_workbench(payload: AiWorkbenchRequest):
+    try:
+        title = ai_mode_title(payload.mode)
+        history = [{"role": item.role, "content": item.content} for item in payload.history]
+        answer = generate_workbench_answer(payload.mode, payload.prompt, history)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    except AiProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return AiWorkbenchResponse(
+        mode=payload.mode,
+        title=title,
+        answer=answer,
+        source="AI 生成",
+    )
 
 
 @app.get("/api/v1/news/daily", response_model=NewsListResponse)
@@ -189,7 +210,7 @@ def list_daily_posts(
     return DailyPostListResponse(items=items, next_offset=next_offset, has_more=has_more)
 
 
-@app.get("/api/v1/daily-posts/templates", response_model=list[DailyTemplate])
+@app.get("/api/v1/daily-posts/templates", response_model=List[DailyTemplate])
 def daily_templates():
     return store.list_daily_templates()
 

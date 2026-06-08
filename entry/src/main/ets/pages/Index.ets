@@ -5,6 +5,7 @@ import { ResearchNews } from '../models/ResearchNews';
 import { DailyPost, DailyPostDraft, DailyTemplate, TopicCategory, TopicTag } from '../models/DailyPost';
 import { PersonalItem, PersonalStats, UserProfile } from '../models/User';
 import { authService } from '../services/AuthService';
+import { AiConversationMessage, AiWorkbenchResult, aiService } from '../services/AiService';
 import { communityService } from '../services/CommunityService';
 import { newsService } from '../services/NewsService';
 import { DailyPostPage, dailyPostService } from '../services/DailyPostService';
@@ -50,6 +51,15 @@ interface ChatMessage {
   content: string;
   time: string;
   mine: boolean;
+}
+
+interface AiChatMessage {
+  id: string;
+  role: string;
+  content: string;
+  mode: string;
+  source: string;
+  time: string;
 }
 
 @Entry
@@ -111,6 +121,10 @@ struct Index {
   @State aiMode: string = 'paper';
   @State aiPrompt: string = '';
   @State aiAnswer: string = '';
+  @State aiSource: string = '';
+  @State aiGenerating: boolean = false;
+  @State aiMessageSeq: number = 1;
+  @State aiMessages: AiChatMessage[] = [];
   @State currentTab: number = 0;
   @State likedPostIds: string[] = [];
   @State colleges: CollegeInfo[] = [
@@ -2222,40 +2236,172 @@ struct Index {
 
   private aiModeName(mode: string): string {
     if (mode === 'topic') {
-      return '选题';
+      return '选题建议';
     }
     if (mode === 'experiment') {
-      return '实验';
+      return '实验设计';
     }
-    return '文献';
+    if (mode === 'compare') {
+      return '文献对比';
+    }
+    if (mode === 'reproduce') {
+      return '复现计划';
+    }
+    if (mode === 'meeting') {
+      return '组会汇报';
+    }
+    if (mode === 'review') {
+      return '审稿式提问';
+    }
+    if (mode === 'qa') {
+      return '科研问答';
+    }
+    return '论文速读';
   }
 
   private aiModeDescription(): string {
     if (this.aiMode === 'topic') {
-      return '把模糊想法整理成可执行的研究问题。';
+      return '把研究方向整理成课题、创新点、数据需求和预期产出。';
     }
     if (this.aiMode === 'experiment') {
-      return '拆解实验目标、变量、指标和风险点。';
+      return '拆解实验方案、变量、对照组、评估指标和失败风险。';
     }
-    return '快速提炼论文贡献、方法、数据和可复现线索。';
+    if (this.aiMode === 'compare') {
+      return '对比多篇论文的方法、数据集、指标、优缺点和适用条件。';
+    }
+    if (this.aiMode === 'reproduce') {
+      return '把论文或想法拆成复现步骤、环境依赖、数据准备和评估方式。';
+    }
+    if (this.aiMode === 'meeting') {
+      return '整理本周进展、主要问题、下周计划和需要导师拍板的事项。';
+    }
+    if (this.aiMode === 'review') {
+      return '模拟 reviewer 追问实验漏洞、baseline 缺失和证据不足。';
+    }
+    if (this.aiMode === 'qa') {
+      return '围绕方法、指标、实验设计和论文写作做自由问答。';
+    }
+    return '输入标题、DOI 或 PDF 链接，提炼问题、方法、数据、结论和局限。';
+  }
+
+  private aiPlaceholder(): string {
+    if (this.aiMode === 'topic') {
+      return '输入研究方向，例如：单细胞免疫图谱、RAG 评测、钙钛矿稳定性';
+    }
+    if (this.aiMode === 'experiment') {
+      return '输入研究目标或实验假设，例如：验证检索增强是否提升答案可靠性';
+    }
+    if (this.aiMode === 'compare') {
+      return '输入多篇论文标题、DOI 或方法名，用换行分隔';
+    }
+    if (this.aiMode === 'reproduce') {
+      return '输入论文标题、GitHub 链接或想复现的核心结果';
+    }
+    if (this.aiMode === 'meeting') {
+      return '输入本周记录、实验结果、遇到的问题或下周任务';
+    }
+    if (this.aiMode === 'review') {
+      return '输入论文想法、实验结论或日报草稿，模拟 reviewer 提问';
+    }
+    if (this.aiMode === 'qa') {
+      return '输入你的科研问题，例如：这个指标为什么不稳定？';
+    }
+    return '输入论文标题、DOI、PDF 链接或摘要片段';
+  }
+
+  private aiActionText(): string {
+    if (this.aiGenerating) {
+      return '发送中...';
+    }
+    return '发送';
   }
 
   private fillAiPrompt(text: string): void {
     this.aiPrompt = text;
-    this.aiAnswer = '';
   }
 
-  private generateAiAnswer(): void {
-    const subject = this.aiPrompt.trim().length > 0 ? this.aiPrompt.trim() : '当前研究问题';
-    if (this.aiMode === 'topic') {
-      this.aiAnswer = `围绕「${subject}」可以先收敛为三个方向：\n1. 明确目标人群、数据来源和可验证指标。\n2. 找 5 篇近两年的综述或基准论文，整理尚未解决的限制。\n3. 把问题写成“输入、方法、输出、评价”的一句话，并准备一个最小验证实验。`;
+  private aiHistoryPayload(): AiConversationMessage[] {
+    const items: AiConversationMessage[] = [];
+    this.aiMessages.forEach((item: AiChatMessage) => {
+      if ((item.role === 'user' || item.role === 'assistant') && item.source !== '请求中' && item.source !== '生成失败') {
+        items.push({
+          role: item.role,
+          content: item.content
+        });
+      }
+    });
+    return items.slice(Math.max(0, items.length - 12));
+  }
+
+  private sendAiMessage(): void {
+    if (this.aiGenerating) {
       return;
     }
-    if (this.aiMode === 'experiment') {
-      this.aiAnswer = `针对「${subject}」建议这样拆实验：\n1. 固定一个主变量，只保留必要对照组。\n2. 先跑小样本验证流程，记录失败条件和数据缺口。\n3. 指标至少包含效果、稳定性和成本三类，方便后续写日报复盘。`;
+    const text = this.aiPrompt.trim();
+    if (text.length === 0) {
       return;
     }
-    this.aiAnswer = `阅读「${subject}」时可以重点抓四件事：\n1. 论文要解决的问题和已有方法的短板。\n2. 核心方法中真正新增的模块或假设。\n3. 数据集、评价指标和消融实验是否支撑结论。\n4. 可迁移到你当前课题的代码、数据或实验模板。`;
+    const history = this.aiHistoryPayload();
+    const time = this.currentTimeText();
+    const userId = `ai-msg-${this.aiMessageSeq}`;
+    const assistantId = `ai-msg-${this.aiMessageSeq + 1}`;
+    const userMessage: AiChatMessage = {
+      id: userId,
+      role: 'user',
+      content: text,
+      mode: this.aiMode,
+      source: '',
+      time
+    };
+    const waitingMessage: AiChatMessage = {
+      id: assistantId,
+      role: 'assistant',
+      content: '正在连接后端 AI，请稍候...',
+      mode: this.aiMode,
+      source: '请求中',
+      time
+    };
+    this.aiMessageSeq += 2;
+    this.aiMessages = this.aiMessages.concat([userMessage, waitingMessage]);
+    this.aiPrompt = '';
+    this.aiGenerating = true;
+    aiService.generate(this.aiMode, text, history)
+      .then((result: AiWorkbenchResult) => {
+        this.updateAiMessage(assistantId, result.answer, result.source);
+      })
+      .catch((error: Error) => {
+        const message = error.message.length > 0 ? error.message : 'AI 生成失败，请检查后端是否启动，以及是否配置了 AI Key。';
+        this.updateAiMessage(assistantId, message, '生成失败');
+      })
+      .finally(() => {
+        this.aiGenerating = false;
+      });
+  }
+
+  private updateAiMessage(messageId: string, content: string, source: string): void {
+    const refreshedId = `${messageId}-result-${this.aiMessageSeq}`;
+    this.aiMessageSeq += 1;
+    this.aiMessages = this.aiMessages.map((item: AiChatMessage) => {
+      if (item.id === messageId) {
+        const updated: AiChatMessage = {
+          id: refreshedId,
+          role: item.role,
+          content,
+          mode: item.mode,
+          source,
+          time: item.time
+        };
+        return updated;
+      }
+      return item;
+    });
+  }
+
+  private clearAiChat(): void {
+    this.aiMessages = [];
+    this.aiPrompt = '';
+    this.aiAnswer = '';
+    this.aiSource = '';
   }
 
   @Builder
@@ -2269,9 +2415,9 @@ struct Index {
       .backgroundColor(this.aiMode === mode ? AppColor.primary : AppColor.surface)
       .border({ width: 1, color: this.aiMode === mode ? AppColor.primary : AppColor.border })
       .borderRadius(Radius.pill)
+      .margin({ right: Space.sm, bottom: Space.sm })
       .onClick(() => {
         this.aiMode = mode;
-        this.aiAnswer = '';
       });
   }
 
@@ -2293,16 +2439,119 @@ struct Index {
   }
 
   @Builder
+  private aiPromptPresets(): void {
+    if (this.aiMode === 'topic') {
+      this.aiPromptPreset('把单细胞免疫图谱方向整理成一个开题问题');
+      this.aiPromptPreset('AI for Science 方向有哪些本科生可做课题');
+      this.aiPromptPreset('围绕钙钛矿稳定性提出一个有创新点的小课题');
+    } else if (this.aiMode === 'experiment') {
+      this.aiPromptPreset('为 Retrieval-Augmented Generation 设计一组对照实验');
+      this.aiPromptPreset('验证数据增强是否提升小样本分类稳定性');
+      this.aiPromptPreset('设计钙钛矿湿热老化实验和评价指标');
+    } else if (this.aiMode === 'compare') {
+      this.aiPromptPreset('对比 RAG、ReAct 和 Toolformer 的方法、数据集、指标');
+      this.aiPromptPreset('比较三篇单细胞免疫图谱论文的优缺点');
+      this.aiPromptPreset('对比 Transformer 与图神经网络在材料预测中的适用条件');
+    } else if (this.aiMode === 'reproduce') {
+      this.aiPromptPreset('把 ReAct 论文拆成一个两周复现计划');
+      this.aiPromptPreset('复现一个医学图像分割 baseline 需要准备什么');
+      this.aiPromptPreset('把论文核心消融实验拆成可执行步骤');
+    } else if (this.aiMode === 'meeting') {
+      this.aiPromptPreset('本周跑完两组实验但指标不稳定，整理成组会汇报');
+      this.aiPromptPreset('把阅读、实验、问题和下周计划组织成组会提纲');
+      this.aiPromptPreset('帮我列出需要导师拍板的实验优先级问题');
+    } else if (this.aiMode === 'review') {
+      this.aiPromptPreset('模拟 reviewer 检查我的 RAG 实验是否缺 baseline');
+      this.aiPromptPreset('指出这份实验结论里证据不足的地方');
+      this.aiPromptPreset('从审稿视角追问单数据集实验的泛化风险');
+    } else if (this.aiMode === 'qa') {
+      this.aiPromptPreset('为什么我的消融实验提升很小，下一步怎么排查');
+      this.aiPromptPreset('论文摘要里方法和贡献应该怎么写得更清楚');
+      this.aiPromptPreset('准确率、F1 和 AUC 应该如何选择');
+    } else {
+      this.aiPromptPreset('帮我梳理这篇论文的研究问题、方法、数据和局限');
+      this.aiPromptPreset('输入 DOI 后生成一份论文速读笔记');
+      this.aiPromptPreset('从论文摘要中提取可复现实验线索');
+    }
+  }
+
+  @Builder
+  private aiChatBubble(message: AiChatMessage): void {
+    Column({ space: Space.xs }) {
+      Row({ space: Space.sm }) {
+        Text(message.role === 'user' ? '我' : this.aiModeName(message.mode))
+          .fontSize(Font.caption)
+          .fontColor(AppColor.textMuted);
+        if (message.role === 'assistant' && message.source.length > 0) {
+          Text(message.source)
+            .fontSize(Font.caption)
+            .fontColor(message.source === '生成失败' ? AppColor.danger : AppColor.accentStrong)
+            .padding({ left: Space.sm, right: Space.sm, top: 2, bottom: 2 })
+            .backgroundColor(message.source === '生成失败' ? AppColor.dangerSoft : AppColor.accentSoft)
+            .borderRadius(Radius.sm);
+        }
+        Text(message.time)
+          .fontSize(Font.caption)
+          .fontColor(AppColor.textMuted);
+      }
+      .width('86%')
+      .justifyContent(message.role === 'user' ? FlexAlign.End : FlexAlign.Start);
+
+      Text(message.content)
+        .fontSize(Font.body)
+        .fontColor(message.role === 'user' ? AppColor.textOnPrimary : AppColor.textBody)
+        .lineHeight(24)
+        .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+        .backgroundColor(message.role === 'user' ? AppColor.primary : AppColor.surface)
+        .borderRadius(Radius.lg)
+        .border({ width: message.role === 'user' ? 0 : 1, color: AppColor.border })
+        .width('86%');
+    }
+    .width('100%')
+    .alignItems(message.role === 'user' ? HorizontalAlign.End : HorizontalAlign.Start);
+  }
+
+  @Builder
+  private aiChatPanel(): void {
+    Column({ space: Space.md }) {
+      if (this.aiMessages.length === 0) {
+        Column({ space: Space.sm }) {
+          Text('今天想推进哪件科研事？')
+            .fontSize(Font.title)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle)
+            .width('100%');
+          Text(this.aiModeDescription())
+            .fontSize(Font.small)
+            .fontColor(AppColor.textSecondary)
+            .width('100%');
+        }
+        .width('100%')
+        .padding(Space.lg)
+        .backgroundColor(AppColor.surface)
+        .borderRadius(Radius.lg)
+        .border({ width: 1, color: AppColor.border });
+      } else {
+        ForEach(this.aiMessages, (message: AiChatMessage) => {
+          this.aiChatBubble(message);
+        }, (message: AiChatMessage) => message.id);
+      }
+    }
+    .width('100%');
+  }
+
+  @Builder
   private aiTab(): void {
     Column() {
-      Column({ space: Space.lg }) {
+      Scroll() {
+        Column({ space: Space.lg }) {
         Column({ space: Space.xs }) {
-          Text('AI')
+          Text('科研工作台')
             .fontSize(Font.h1)
             .fontWeight(FontWeight.Bold)
             .fontColor(AppColor.textTitle)
             .width('100%');
-          Text('把科研想法整理成下一步行动')
+          Text('把论文、实验和组会问题整理成下一步行动')
             .fontSize(Font.small)
             .fontColor(AppColor.textSecondary)
             .width('100%');
@@ -2310,10 +2559,15 @@ struct Index {
         .width('100%');
 
         Column({ space: Space.md }) {
-          Row({ space: Space.sm }) {
+          Flex({ wrap: FlexWrap.Wrap }) {
             this.aiModeChip('paper', '文献速读');
             this.aiModeChip('topic', '选题建议');
             this.aiModeChip('experiment', '实验设计');
+            this.aiModeChip('compare', '文献对比');
+            this.aiModeChip('reproduce', '复现计划');
+            this.aiModeChip('meeting', '组会汇报');
+            this.aiModeChip('review', '审稿式提问');
+            this.aiModeChip('qa', '科研问答');
           }
           .width('100%');
 
@@ -2321,31 +2575,6 @@ struct Index {
             .fontSize(Font.small)
             .fontColor(AppColor.textSecondary)
             .width('100%');
-
-          TextArea({ placeholder: '输入论文标题、研究想法或实验目标', text: this.aiPrompt })
-            .height(142)
-            .fontSize(Font.body)
-            .fontColor(AppColor.textBody)
-            .placeholderColor(AppColor.textMuted)
-            .lineHeight(22)
-            .backgroundColor(AppColor.surfaceSoft)
-            .border({ width: 1, color: AppColor.border })
-            .borderRadius(Radius.lg)
-            .padding(Space.md)
-            .onChange((value: string) => {
-              this.aiPrompt = value;
-            });
-
-          Button(`生成${this.aiModeName(this.aiMode)}建议`)
-            .height(44)
-            .width('100%')
-            .fontColor(AppColor.textOnPrimary)
-            .fontWeight(FontWeight.Medium)
-            .backgroundColor(AppColor.primary)
-            .borderRadius(Radius.lg)
-            .onClick(() => {
-              this.generateAiAnswer();
-            });
         }
         .width('100%')
         .padding(Space.lg)
@@ -2361,50 +2590,68 @@ struct Index {
             .fontColor(AppColor.textTitle)
             .width('100%');
           Flex({ wrap: FlexWrap.Wrap }) {
-            this.aiPromptPreset('帮我梳理这篇论文的创新点和可复现实验');
-            this.aiPromptPreset('把单细胞免疫图谱方向整理成一个开题问题');
-            this.aiPromptPreset('为 Retrieval-Augmented Generation 设计一组对照实验');
+            this.aiPromptPresets();
           }
           .width('100%');
         }
         .width('100%');
 
-        if (this.aiAnswer.length > 0) {
-          Column({ space: Space.md }) {
-            Row() {
-              Text(`${this.aiModeName(this.aiMode)}建议`)
-                .fontSize(Font.title)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(AppColor.textTitle);
-              Blank();
-              Text('本地草稿')
-                .fontSize(Font.caption)
-                .fontColor(AppColor.accentStrong)
-                .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
-                .backgroundColor(AppColor.accentSoft)
-                .borderRadius(Radius.sm);
-            }
-            .width('100%');
+        this.aiChatPanel();
 
-            Text(this.aiAnswer)
-              .fontSize(Font.body)
+        Column({ space: Space.md }) {
+          TextArea({ placeholder: this.aiPlaceholder(), text: this.aiPrompt })
+            .height(104)
+            .fontSize(Font.body)
+            .fontColor(AppColor.textBody)
+            .placeholderColor(AppColor.textMuted)
+            .lineHeight(22)
+            .backgroundColor(AppColor.surfaceSoft)
+            .border({ width: 1, color: AppColor.border })
+            .borderRadius(Radius.lg)
+            .padding(Space.md)
+            .onChange((value: string) => {
+              this.aiPrompt = value;
+            });
+
+          Row({ space: Space.sm }) {
+            Button('清空对话')
+              .height(44)
+              .layoutWeight(1)
               .fontColor(AppColor.textBody)
-              .lineHeight(24)
-              .width('100%');
+              .fontWeight(FontWeight.Medium)
+              .backgroundColor(AppColor.surfaceSoft)
+              .borderRadius(Radius.lg)
+              .onClick(() => {
+                this.clearAiChat();
+              });
+            Button(this.aiActionText())
+              .height(44)
+              .layoutWeight(2)
+              .fontColor(AppColor.textOnPrimary)
+              .fontWeight(FontWeight.Medium)
+              .backgroundColor(this.aiGenerating ? AppColor.textMuted : AppColor.primary)
+              .borderRadius(Radius.lg)
+              .enabled(!this.aiGenerating)
+              .onClick(() => {
+                this.sendAiMessage();
+              });
           }
-          .width('100%')
-          .padding(Space.lg)
-          .backgroundColor(AppColor.surface)
-          .borderRadius(Radius.lg)
-          .border({ width: 1, color: AppColor.border });
+          .width('100%');
         }
+        .width('100%')
+        .padding(Space.lg)
+        .backgroundColor(AppColor.surface)
+        .borderRadius(Radius.lg)
+        .border({ width: 1, color: AppColor.border });
       }
       .width('100%')
-      .layoutWeight(1)
       .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.xxl })
       .justifyContent(FlexAlign.Start)
-      .alignItems(HorizontalAlign.Start)
-      .clip(true);
+      .alignItems(HorizontalAlign.Start);
+      }
+      .height('100%')
+      .scrollBar(BarState.Off)
+      .backgroundColor(AppColor.bg);
     }
     .width('100%')
     .height('100%')
@@ -3232,7 +3479,7 @@ struct Index {
 
       Row() {
         this.tabBarItem('首页', 0);
-        this.tabBarItem('AI', 1);
+        this.tabBarItem('工作台', 1);
         this.tabBarItem('创作', 2);
         this.tabBarItem('消息', 3);
         this.tabBarItem('我的', 4);

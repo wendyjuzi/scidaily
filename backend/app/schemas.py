@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class NewsItem(BaseModel):
@@ -25,6 +25,24 @@ class CategoryResponse(BaseModel):
 
 class ApiMessage(BaseModel):
     message: str
+
+
+class AiChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class AiWorkbenchRequest(BaseModel):
+    mode: str
+    prompt: str
+    history: List[AiChatMessage] = Field(default_factory=list)
+
+
+class AiWorkbenchResponse(BaseModel):
+    mode: str
+    title: str
+    answer: str
+    source: str
 
 
 class ImageUploadRequest(BaseModel):
