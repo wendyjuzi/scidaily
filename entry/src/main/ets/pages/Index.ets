@@ -56,6 +56,7 @@ interface ChatMessage {
 @Component
 struct Index {
   private collegeScroller: Scroller = new Scroller();
+  private messageSeedUserId: number = -1;
   @State posts: DailyPost[] = [];
   @State leftPosts: DailyPost[] = [];
   @State rightPosts: DailyPost[] = [];
@@ -101,134 +102,8 @@ struct Index {
   @State activeConversationId: string = '';
   @State chatInput: string = '';
   @State nextChatMessageId: number = 100;
-  @State messageConversations: MessageConversation[] = [
-    {
-      id: 'crt-lab',
-      kind: 'group',
-      title: 'CRT 课题组',
-      preview: '导师：本周组会请大家同步实验进展和论文阅读',
-      time: '20:44',
-      unreadCount: 2,
-      avatarText: 'CR',
-      avatarColor: '#334155'
-    },
-    {
-      id: 'neurips-2026',
-      kind: 'group',
-      title: 'NeurIPS 2026 投稿交流群',
-      preview: '群公告：今晚整理 rebuttal 时间线和 checklist',
-      time: '20:43',
-      unreadCount: 0,
-      avatarText: 'N',
-      avatarColor: '#0D9488'
-    },
-    {
-      id: 'agent-group',
-      kind: 'group',
-      title: 'AI 智能体交流群',
-      preview: '同学A：多智能体协作那篇代码已经跑通了',
-      time: '20:20',
-      unreadCount: 5,
-      avatarText: 'AI',
-      avatarColor: '#D97706'
-    },
-    {
-      id: 'baoyan-2026',
-      kind: 'group',
-      title: '2026 保研交流群',
-      preview: '群公告：中南大学夏令营材料模板已更新',
-      time: '20:08',
-      unreadCount: 1,
-      avatarText: '保',
-      avatarColor: '#2563EB'
-    },
-    {
-      id: 'advisor',
-      kind: 'friend',
-      title: '导师',
-      preview: '明天上午把实验对比表发我看一下',
-      time: '18:49',
-      unreadCount: 0,
-      avatarText: '导',
-      avatarColor: '#64748B'
-    },
-    {
-      id: 'senior',
-      kind: 'friend',
-      title: '师兄',
-      preview: '我把复现脚本放到共享目录了，你先看 README',
-      time: '17:04',
-      unreadCount: 8,
-      avatarText: '兄',
-      avatarColor: '#7C3AED'
-    }
-  ];
-  @State chatMessages: ChatMessage[] = [
-    {
-      id: 'chat-001',
-      conversationId: 'crt-lab',
-      sender: '导师',
-      content: '本周组会请大家同步实验进展和论文阅读，重点讲清楚下一步计划。',
-      time: '20:40',
-      mine: false
-    },
-    {
-      id: 'chat-002',
-      conversationId: 'crt-lab',
-      sender: '我',
-      content: '收到，我会把 RAG 文献问答和单细胞复现进度整理成两页。',
-      time: '20:42',
-      mine: true
-    },
-    {
-      id: 'chat-003',
-      conversationId: 'crt-lab',
-      sender: '导师',
-      content: '可以，实验指标和失败样例也放进去。',
-      time: '20:44',
-      mine: false
-    },
-    {
-      id: 'chat-004',
-      conversationId: 'neurips-2026',
-      sender: '群公告',
-      content: '今晚整理 rebuttal 时间线和 checklist，明天统一看一遍格式。',
-      time: '20:43',
-      mine: false
-    },
-    {
-      id: 'chat-005',
-      conversationId: 'agent-group',
-      sender: '同学A',
-      content: '多智能体协作那篇代码已经跑通了，主要卡在工具调用的异常恢复。',
-      time: '20:20',
-      mine: false
-    },
-    {
-      id: 'chat-006',
-      conversationId: 'baoyan-2026',
-      sender: '群公告',
-      content: '中南大学夏令营材料模板已更新，注意个人陈述的字数限制。',
-      time: '20:08',
-      mine: false
-    },
-    {
-      id: 'chat-007',
-      conversationId: 'advisor',
-      sender: '导师',
-      content: '明天上午把实验对比表发我看一下，尤其是消融实验那块。',
-      time: '18:49',
-      mine: false
-    },
-    {
-      id: 'chat-008',
-      conversationId: 'senior',
-      sender: '师兄',
-      content: '我把复现脚本放到共享目录了，你先看 README，环境文件也在里面。',
-      time: '17:04',
-      mine: false
-    }
-  ];
+  @State messageConversations: MessageConversation[] = [];
+  @State chatMessages: ChatMessage[] = [];
   @State aiMode: string = 'paper';
   @State aiPrompt: string = '';
   @State aiAnswer: string = '';
@@ -364,6 +239,7 @@ struct Index {
 
   onPageShow(): void {
     this.currentUser = authService.getCurrentUser();
+    this.configureMessageSeed();
     this.reloadProfile();
     this.reloadMine();
     this.reloadNotifications();
@@ -371,6 +247,7 @@ struct Index {
 
   private bootstrap(): void {
     this.currentUser = authService.getCurrentUser();
+    this.configureMessageSeed();
     dailyPostService.listCategories().then((items: TopicCategory[]) => {
       this.categories = items;
       const firstReal = items.find((item: TopicCategory) => item.id !== 'all');
@@ -388,6 +265,166 @@ struct Index {
     this.reloadMine();
     this.reloadNotifications();
     this.refreshFeed();
+  }
+
+  private configureMessageSeed(): void {
+    const user = this.currentUser;
+    const userId = user === undefined ? 0 : user.id;
+    if (this.messageSeedUserId === userId) {
+      return;
+    }
+    this.messageSeedUserId = userId;
+    this.activeConversationId = '';
+    this.chatInput = '';
+    this.nextChatMessageId = 100;
+    if (this.isDemoUser(user)) {
+      this.messageConversations = this.demoMessageConversations();
+      this.chatMessages = this.demoChatMessages();
+      return;
+    }
+    this.messageConversations = [];
+    this.chatMessages = [];
+  }
+
+  private isDemoUser(user: UserProfile | undefined): boolean {
+    if (user === undefined) {
+      return false;
+    }
+    return user.username === 'demo' || user.nickname === '科研日报体验号';
+  }
+
+  private demoMessageConversations(): MessageConversation[] {
+    return [
+      {
+        id: 'crt-lab',
+        kind: 'group',
+        title: 'CRT 课题组',
+        preview: '导师：本周组会请大家同步实验进展和论文阅读',
+        time: '20:44',
+        unreadCount: 2,
+        avatarText: 'CR',
+        avatarColor: '#334155'
+      },
+      {
+        id: 'neurips-2026',
+        kind: 'group',
+        title: 'NeurIPS 2026 投稿交流群',
+        preview: '群公告：今晚整理 rebuttal 时间线和 checklist',
+        time: '20:43',
+        unreadCount: 0,
+        avatarText: 'N',
+        avatarColor: '#0D9488'
+      },
+      {
+        id: 'agent-group',
+        kind: 'group',
+        title: 'AI 智能体交流群',
+        preview: '同学A：多智能体协作那篇代码已经跑通了',
+        time: '20:20',
+        unreadCount: 5,
+        avatarText: 'AI',
+        avatarColor: '#D97706'
+      },
+      {
+        id: 'baoyan-2026',
+        kind: 'group',
+        title: '2026 保研交流群',
+        preview: '群公告：中南大学夏令营材料模板已更新',
+        time: '20:08',
+        unreadCount: 1,
+        avatarText: '保',
+        avatarColor: '#2563EB'
+      },
+      {
+        id: 'advisor',
+        kind: 'friend',
+        title: '导师',
+        preview: '明天上午把实验对比表发我看一下',
+        time: '18:49',
+        unreadCount: 0,
+        avatarText: '导',
+        avatarColor: '#64748B'
+      },
+      {
+        id: 'senior',
+        kind: 'friend',
+        title: '师兄',
+        preview: '我把复现脚本放到共享目录了，你先看 README',
+        time: '17:04',
+        unreadCount: 8,
+        avatarText: '兄',
+        avatarColor: '#7C3AED'
+      }
+    ];
+  }
+
+  private demoChatMessages(): ChatMessage[] {
+    return [
+      {
+        id: 'chat-001',
+        conversationId: 'crt-lab',
+        sender: '导师',
+        content: '本周组会请大家同步实验进展和论文阅读，重点讲清楚下一步计划。',
+        time: '20:40',
+        mine: false
+      },
+      {
+        id: 'chat-002',
+        conversationId: 'crt-lab',
+        sender: '我',
+        content: '收到，我会把 RAG 文献问答和单细胞复现进度整理成两页。',
+        time: '20:42',
+        mine: true
+      },
+      {
+        id: 'chat-003',
+        conversationId: 'crt-lab',
+        sender: '导师',
+        content: '可以，实验指标和失败样例也放进去。',
+        time: '20:44',
+        mine: false
+      },
+      {
+        id: 'chat-004',
+        conversationId: 'neurips-2026',
+        sender: '群公告',
+        content: '今晚整理 rebuttal 时间线和 checklist，明天统一看一遍格式。',
+        time: '20:43',
+        mine: false
+      },
+      {
+        id: 'chat-005',
+        conversationId: 'agent-group',
+        sender: '同学A',
+        content: '多智能体协作那篇代码已经跑通了，主要卡在工具调用的异常恢复。',
+        time: '20:20',
+        mine: false
+      },
+      {
+        id: 'chat-006',
+        conversationId: 'baoyan-2026',
+        sender: '群公告',
+        content: '中南大学夏令营材料模板已更新，注意个人陈述的字数限制。',
+        time: '20:08',
+        mine: false
+      },
+      {
+        id: 'chat-007',
+        conversationId: 'advisor',
+        sender: '导师',
+        content: '明天上午把实验对比表发我看一下，尤其是消融实验那块。',
+        time: '18:49',
+        mine: false
+      },
+      {
+        id: 'chat-008',
+        conversationId: 'senior',
+        sender: '师兄',
+        content: '我把复现脚本放到共享目录了，你先看 README，环境文件也在里面。',
+        time: '17:04',
+        mine: false
+      }
+    ];
   }
 
   private refreshFeed(): void {
@@ -2436,6 +2473,25 @@ struct Index {
   }
 
   @Builder
+  private emptyConversationState(): void {
+    Column({ space: Space.sm }) {
+      Text('暂无会话')
+        .fontSize(Font.sub)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(AppColor.textTitle);
+      Text('新的群聊和好友对话会显示在这里')
+        .fontSize(Font.small)
+        .fontColor(AppColor.textSecondary);
+    }
+    .width('100%')
+    .padding({ top: Space.xl, bottom: Space.xl })
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: AppColor.border });
+  }
+
+  @Builder
   private chatBubble(message: ChatMessage): void {
     Row() {
       if (message.mine) {
@@ -2627,20 +2683,24 @@ struct Index {
             .fontColor(AppColor.textTitle)
             .width('100%');
 
-          Column() {
-            ForEach(this.messageConversations, (item: MessageConversation, index: number) => {
-              this.conversationRow(item);
-              if (index < this.messageConversations.length - 1) {
-                Divider()
-                  .color(AppColor.border)
-                  .margin({ left: 74, right: Space.sm });
-              }
-            }, (item: MessageConversation) => item.id);
+          if (this.messageConversations.length === 0) {
+            this.emptyConversationState();
+          } else {
+            Column() {
+              ForEach(this.messageConversations, (item: MessageConversation, index: number) => {
+                this.conversationRow(item);
+                if (index < this.messageConversations.length - 1) {
+                  Divider()
+                    .color(AppColor.border)
+                    .margin({ left: 74, right: Space.sm });
+                }
+              }, (item: MessageConversation) => item.id);
+            }
+            .width('100%')
+            .backgroundColor(AppColor.surface)
+            .borderRadius(Radius.lg)
+            .border({ width: 1, color: AppColor.border });
           }
-          .width('100%')
-          .backgroundColor(AppColor.surface)
-          .borderRadius(Radius.lg)
-          .border({ width: 1, color: AppColor.border });
 
           if (this.messageError.length > 0) {
             Text(this.messageError)
