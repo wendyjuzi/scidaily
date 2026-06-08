@@ -5,6 +5,7 @@
     "pages/CollegeCircle",
     "pages/Trending",
     "pages/DailyPostDetail",
+    "pages/AuthorProfile",
     "pages/Detail",
     "pages/Login",
     "pages/CreatePost",
