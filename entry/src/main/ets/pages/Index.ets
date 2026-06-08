@@ -57,9 +57,11 @@ interface ChatMessage {
 struct Index {
   private collegeScroller: Scroller = new Scroller();
   private messageSeedUserId: number = -1;
+  private feedRequestSeq: number = 0;
   @State posts: DailyPost[] = [];
   @State leftPosts: DailyPost[] = [];
   @State rightPosts: DailyPost[] = [];
+  @State cachedFeedItems: DailyPost[] = [];
   @State categories: TopicCategory[] = [];
   @State tags: TopicTag[] = [];
   @State templates: DailyTemplate[] = [];
@@ -434,25 +436,95 @@ struct Index {
   }
 
   private refreshFeed(): void {
+    const requestSeq = ++this.feedRequestSeq;
+    const categoryId = this.selectedCategoryId;
+    const tagId = this.selectedTagId;
     this.refreshing = true;
     this.nextOffset = 0;
-    dailyPostService.listPublished(this.selectedCategoryId, this.selectedTagId, 0, 10)
+    dailyPostService.listPublished(categoryId, tagId, 0, 10)
       .then((page) => {
+        if (!this.isCurrentFeedRequest(requestSeq, categoryId, tagId)) {
+          return;
+        }
         this.nextOffset = page.nextOffset;
         this.hasMore = page.hasMore;
+        this.setFeedItems(page.items);
         paperService.listPapers(0, 20).then((paperPage) => {
-          const paperPosts = paperPage.items.map((paper: PaperItem) => this.paperToFeedPost(paper));
-          this.posts = this.mergeFeedItems(page.items, paperPosts);
-          this.splitColumns();
+          if (!this.isCurrentFeedRequest(requestSeq, categoryId, tagId)) {
+            return;
+          }
+          const paperPosts = paperPage.items
+            .filter((paper: PaperItem) => this.paperMatchesFilter(paper, categoryId, tagId))
+            .map((paper: PaperItem) => this.paperToFeedPost(paper));
+          this.setFeedItems(this.mergeFeedItems(page.items, paperPosts));
         }).catch((error: Error) => {
-          this.posts = page.items;
-          this.splitColumns();
+          if (!this.isCurrentFeedRequest(requestSeq, categoryId, tagId)) {
+            return;
+          }
+          this.setFeedItems(page.items);
         });
       })
       .finally(() => {
-        this.loading = false;
-        this.refreshing = false;
+        if (this.isCurrentFeedRequest(requestSeq, categoryId, tagId)) {
+          this.loading = false;
+          this.refreshing = false;
+        }
       });
+  }
+
+  private isCurrentFeedRequest(requestSeq: number, categoryId: string, tagId: string): boolean {
+    return requestSeq === this.feedRequestSeq &&
+      categoryId === this.selectedCategoryId &&
+      tagId === this.selectedTagId;
+  }
+
+  private setFeedItems(items: DailyPost[]): void {
+    this.posts = items;
+    this.cacheFeedItems(items);
+    this.splitColumns();
+  }
+
+  private cacheFeedItems(items: DailyPost[]): void {
+    const merged = this.cachedFeedItems.slice();
+    items.forEach((item: DailyPost) => {
+      const index = merged.findIndex((cached: DailyPost) => cached.id === item.id);
+      if (index >= 0) {
+        merged[index] = item;
+      } else {
+        merged.push(item);
+      }
+    });
+    this.cachedFeedItems = merged;
+  }
+
+  private feedItemMatchesFilter(item: DailyPost, categoryId: string, tagId: string): boolean {
+    if (categoryId.length > 0 && categoryId !== 'all' && item.categoryId !== categoryId) {
+      return false;
+    }
+    if (tagId.length > 0 && item.tagIds.indexOf(tagId) < 0) {
+      return false;
+    }
+    return true;
+  }
+
+  private paperMatchesFilter(paper: PaperItem, categoryId: string, tagId: string): boolean {
+    if (categoryId.length > 0 && categoryId !== 'all' && paper.categoryId !== categoryId) {
+      return false;
+    }
+    if (tagId.length > 0 && paper.tagIds.indexOf(tagId) < 0) {
+      return false;
+    }
+    return true;
+  }
+
+  private applyCachedFeed(categoryId: string, tagId: string): void {
+    const source = this.cachedFeedItems.length > 0 ? this.cachedFeedItems : this.posts;
+    if (source.length === 0) {
+      return;
+    }
+    this.posts = source.filter((item: DailyPost) => this.feedItemMatchesFilter(item, categoryId, tagId));
+    this.splitColumns();
+    this.loading = false;
   }
 
   private mergeFeedItems(dailyItems: DailyPost[], paperItems: DailyPost[]): DailyPost[] {
@@ -473,16 +545,25 @@ struct Index {
     if (!this.hasMore || this.refreshing) {
       return;
     }
+    const requestSeq = this.feedRequestSeq;
+    const categoryId = this.selectedCategoryId;
+    const tagId = this.selectedTagId;
     this.refreshing = true;
-    dailyPostService.listPublished(this.selectedCategoryId, this.selectedTagId, this.nextOffset, 10)
+    dailyPostService.listPublished(categoryId, tagId, this.nextOffset, 10)
       .then((page) => {
+        if (!this.isCurrentFeedRequest(requestSeq, categoryId, tagId)) {
+          return;
+        }
         this.posts = this.posts.concat(page.items);
+        this.cacheFeedItems(page.items);
         this.nextOffset = page.nextOffset;
         this.hasMore = page.hasMore;
         this.splitColumns();
       })
       .finally(() => {
-        this.refreshing = false;
+        if (this.isCurrentFeedRequest(requestSeq, categoryId, tagId)) {
+          this.refreshing = false;
+        }
       });
   }
 
@@ -546,8 +627,12 @@ struct Index {
   }
 
   private selectCategory(categoryId: string): void {
+    if (this.selectedCategoryId === categoryId && this.selectedTagId.length === 0) {
+      return;
+    }
     this.selectedCategoryId = categoryId;
     this.selectedTagId = '';
+    this.applyCachedFeed(categoryId, '');
     dailyPostService.listTags(categoryId).then((items: TopicTag[]) => {
       this.tags = items;
     });
@@ -556,6 +641,7 @@ struct Index {
 
   private selectTag(tagId: string): void {
     this.selectedTagId = this.selectedTagId === tagId ? '' : tagId;
+    this.applyCachedFeed(this.selectedCategoryId, this.selectedTagId);
     this.refreshFeed();
   }
 
