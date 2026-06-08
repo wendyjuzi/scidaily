@@ -215,7 +215,6 @@ struct CollegeCircle {
     .borderRadius(Radius.lg)
     .onClick(() => {
       this.selectedCollegeId = college.id;
-      this.collegeScroller.scrollTo({ xOffset: 0, yOffset: 0 });
     });
   }
 
@@ -425,13 +424,18 @@ struct CollegeCircle {
           .borderRadius(Radius.lg);
         }
         .width('100%')
-        .padding({ left: Space.lg, right: Space.lg, top: Space.sm, bottom: Space.xxl });
+        .padding({ left: Space.lg, right: Space.lg, top: Space.sm, bottom: Space.xxl })
+        .justifyContent(FlexAlign.Start)
+        .alignItems(HorizontalAlign.Start);
       }
       .layoutWeight(1)
-      .scrollBar(BarState.Off);
+      .scrollBar(BarState.Off)
+      .backgroundColor(AppColor.bg);
     }
     .width('100%')
     .height('100%')
+    .justifyContent(FlexAlign.Start)
+    .alignItems(HorizontalAlign.Start)
     .backgroundColor(AppColor.bg);
   }
 }

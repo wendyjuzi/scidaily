@@ -1520,7 +1520,6 @@ struct Index {
     .borderRadius(Radius.lg)
     .onClick(() => {
       this.selectedCollegeId = college.id;
-      this.collegeScroller.scrollTo({ xOffset: 0, yOffset: 0 });
     });
   }
 
@@ -1716,11 +1715,33 @@ struct Index {
       if (this.homeChannel === 'discover') {
         this.discoveryFilterBar();
       }
-      Scroll() {
+      if (this.homeChannel === 'college') {
         Column({ space: Space.md }) {
-          if (this.homeChannel === 'college') {
-            this.collegeFeedContent();
-          } else if (this.homeChannel === 'follow') {
+          this.collegeFeedContent();
+          if (this.toastText.length > 0) {
+            Text(this.toastText)
+              .fontSize(Font.small)
+              .fontColor(AppColor.textBody)
+              .maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .width('100%')
+              .padding(Space.md)
+              .backgroundColor(AppColor.surface)
+              .borderRadius(Radius.md)
+              .border({ width: 1, color: AppColor.border });
+          }
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .padding({ left: Space.sm, right: Space.sm, top: Space.sm, bottom: Space.md })
+        .justifyContent(FlexAlign.Start)
+        .alignItems(HorizontalAlign.Start)
+        .clip(true)
+        .backgroundColor(AppColor.bg);
+      } else {
+        Scroll() {
+        Column({ space: Space.md }) {
+          if (this.homeChannel === 'follow') {
             this.followFeedContent();
           } else if (this.loading) {
             Row({ space: Space.sm }) {
@@ -1802,6 +1823,7 @@ struct Index {
       .layoutWeight(1)
       .scrollBar(BarState.Off)
       .backgroundColor(AppColor.bg);
+      }
     }
     .width('100%')
     .height('100%')
@@ -2666,59 +2688,60 @@ struct Index {
       .alignItems(VerticalAlign.Center)
       .backgroundColor(AppColor.surface);
 
-      Scroll() {
-        Column({ space: Space.xl }) {
-          Row({ space: Space.md }) {
-            this.messageShortcut('赞', '赞和收藏', AppColor.danger, this.unreadCountForMode('like'), 'like');
-            this.messageShortcut('+', '新增关注', AppColor.series1, this.unreadCountForMode('follow'), 'follow');
-            this.messageShortcut('@', '评论和@', AppColor.series2, this.unreadCountForMode('comment'), 'comment');
-            this.messageShortcut('✉', '互动通知', '#2563EB', this.unreadCountForMode('system'), 'system');
-          }
-          .width('100%')
-          .padding({ top: Space.lg, bottom: Space.lg });
-
-          Text('会话')
-            .fontSize(Font.title)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(AppColor.textTitle)
-            .width('100%');
-
-          if (this.messageConversations.length === 0) {
-            this.emptyConversationState();
-          } else {
-            Column() {
-              ForEach(this.messageConversations, (item: MessageConversation, index: number) => {
-                this.conversationRow(item);
-                if (index < this.messageConversations.length - 1) {
-                  Divider()
-                    .color(AppColor.border)
-                    .margin({ left: 74, right: Space.sm });
-                }
-              }, (item: MessageConversation) => item.id);
-            }
-            .width('100%')
-            .backgroundColor(AppColor.surface)
-            .borderRadius(Radius.lg)
-            .border({ width: 1, color: AppColor.border });
-          }
-
-          if (this.messageError.length > 0) {
-            Text(this.messageError)
-              .fontSize(Font.small)
-              .fontColor(AppColor.danger)
-              .width('100%');
-          }
+      Column({ space: Space.xl }) {
+        Row({ space: Space.md }) {
+          this.messageShortcut('赞', '赞和收藏', AppColor.danger, this.unreadCountForMode('like'), 'like');
+          this.messageShortcut('+', '新增关注', AppColor.series1, this.unreadCountForMode('follow'), 'follow');
+          this.messageShortcut('@', '评论和@', AppColor.series2, this.unreadCountForMode('comment'), 'comment');
+          this.messageShortcut('✉', '互动通知', '#2563EB', this.unreadCountForMode('system'), 'system');
         }
         .width('100%')
-        .padding({ left: Space.lg, right: Space.lg, bottom: Space.xxl });
+        .padding({ top: Space.lg, bottom: Space.lg });
+
+        Text('会话')
+          .fontSize(Font.title)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.textTitle)
+          .width('100%');
+
+        if (this.messageConversations.length === 0) {
+          this.emptyConversationState();
+        } else {
+          Column() {
+            ForEach(this.messageConversations, (item: MessageConversation, index: number) => {
+              this.conversationRow(item);
+              if (index < this.messageConversations.length - 1) {
+                Divider()
+                  .color(AppColor.border)
+                  .margin({ left: 74, right: Space.sm });
+              }
+            }, (item: MessageConversation) => item.id);
+          }
+          .width('100%')
+          .backgroundColor(AppColor.surface)
+          .borderRadius(Radius.lg)
+          .border({ width: 1, color: AppColor.border });
+        }
+
+        if (this.messageError.length > 0) {
+          Text(this.messageError)
+            .fontSize(Font.small)
+            .fontColor(AppColor.danger)
+            .width('100%');
+        }
       }
+      .width('100%')
       .layoutWeight(1)
-      .scrollBar(BarState.Off)
+      .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.xxl })
+      .justifyContent(FlexAlign.Start)
+      .alignItems(HorizontalAlign.Start)
+      .clip(true)
       .backgroundColor(AppColor.bg);
       }
     }
     .width('100%')
     .height('100%')
+    .justifyContent(FlexAlign.Start)
     .backgroundColor(AppColor.bg);
   }
 
