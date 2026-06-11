@@ -2,6 +2,7 @@ import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.Ab
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { authService } from '../services/AuthService';
+import { paperService } from '../services/PaperService';
 
 const DOMAIN = 0x0000;
 
@@ -14,6 +15,9 @@ export default class EntryAbility extends UIAbility {
     }
     authService.init(this.context).catch((error: Error) => {
       hilog.error(DOMAIN, 'testTag', 'Failed to init auth service. Cause: %{public}s', error.message);
+    });
+    paperService.init(this.context).catch((error: Error) => {
+      hilog.error(DOMAIN, 'testTag', 'Failed to init paper service. Cause: %{public}s', error.message);
     });
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }

@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>SciDaily PDF Viewer</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #0b1220;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: none;
+    }
+    #viewer {
+      position: absolute;
+      inset: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      background: #0b1220;
+      padding: 10px 0 40px;
+      box-sizing: border-box;
+    }
+    /* night invert applied on the pages wrapper so the scrollbar stays normal */
+    #pages.night canvas,
+    #pages.night .placeholder {
+      filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.95);
+    }
+    #pages {
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .page {
+      position: relative;
+      margin: 0 auto 12px;
+      background: #ffffff;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .placeholder {
+      width: 100%;
+      height: 100%;
+      background: #f4f4f4;
+    }
+    .page canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    /* Selectable (invisible) text overlay aligned to the canvas. */
+    .textLayer {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      line-height: 1;
+      text-size-adjust: none;
+      forced-color-adjust: none;
+      z-index: 2;
+    }
+    .textLayer span,
+    .textLayer br {
+      color: transparent;
+      position: absolute;
+      white-space: pre;
+      cursor: text;
+      transform-origin: 0 0;
+    }
+    .textLayer ::selection { background: rgba(45, 130, 255, 0.45); }
+    #status {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      right: 0;
+      transform: translateY(-50%);
+      text-align: center;
+      color: #94a3b8;
+      font-family: -apple-system, "HarmonyOS Sans", sans-serif;
+      font-size: 15px;
+      padding: 0 24px;
+    }
+    #status.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="viewer">
+    <div id="pages"></div>
+  </div>
+  <div id="status">正在加载 PDF...</div>
+
+  <script src="./pdfjs/pdf.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      var pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
+      if (pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = './pdfjs/pdf.worker.min.js';
+      }
+
+      var viewerEl = document.getElementById('viewer');
+      var pagesEl = document.getElementById('pages');
+      var statusEl = document.getElementById('status');
+
+      var state = {
+        doc: null,
+        total: 0,
+        scaleMode: 'width',   // 'width' | 'page' | 'custom'
+        scale: 1,             // pdf-units -> css px
+        night: false,
+        baseViewports: [],    // unscaled viewport (scale=1) per page index
+        pageEls: [],          // .page elements
+        rendered: [],         // boolean rendered flag per page
+        renderTasks: [],      // active RenderTask per page
+        dpr: Math.max(1, Math.min(3, window.devicePixelRatio || 1)),
+        observer: null,
+        currentPage: 1,
+        loadToken: 0
+      };
+
+      function notify(method, arg) {
+        try {
+          if (typeof scidailyNative !== 'undefined' && scidailyNative[method]) {
+            scidailyNative[method](arg);
+          }
+        } catch (e) { /* bridge not ready */ }
+      }
+
+      function showStatus(text) {
+        if (!text) { statusEl.classList.add('hidden'); return; }
+        statusEl.textContent = text;
+        statusEl.classList.remove('hidden');
+      }
+
+      function contentWidth() {
+        // available css width for a page (viewer minus a little side gutter)
+        var w = viewerEl.clientWidth;
+        return Math.max(120, w - 16);
+      }
+
+      function fitWidthScale(vp1) {
+        return contentWidth() / vp1.width;
+      }
+
+      function fitPageScale(vp1) {
+        var ws = contentWidth() / vp1.width;
+        var hs = (viewerEl.clientHeight - 24) / vp1.height;
+        return Math.min(ws, hs);
+      }
+
+      function effectiveScaleFor(i) {
+        var vp1 = state.baseViewports[i];
+        if (!vp1) return state.scale;
+        if (state.scaleMode === 'width') return fitWidthScale(vp1);
+        if (state.scaleMode === 'page') return fitPageScale(vp1);
+        return state.scale;
+      }
+
+      function layoutPlaceholders() {
+        for (var i = 0; i < state.total; i++) {
+          var vp1 = state.baseViewports[i];
+          var el = state.pageEls[i];
+          if (!vp1 || !el) continue;
+          var s = effectiveScaleFor(i);
+          var w = Math.round(vp1.width * s);
+          var h = Math.round(vp1.height * s);
+          el.style.width = w + 'px';
+          el.style.height = h + 'px';
+        }
+      }
+
+      function clearPage(i) {
+        var task = state.renderTasks[i];
+        if (task) { try { task.cancel(); } catch (e) {} state.renderTasks[i] = null; }
+        var el = state.pageEls[i];
+        if (el && state.rendered[i]) {
+          el.innerHTML = '<div class="placeholder"></div>';
+          state.rendered[i] = false;
+        }
+      }
+
+      function buildTextLayer(page, cssVp, el) {
+        if (!pdfjsLib || typeof pdfjsLib.renderTextLayer !== 'function') return;
+        page.getTextContent().then(function (textContent) {
+          if (!el.isConnected) return;
+          var layer = document.createElement('div');
+          layer.className = 'textLayer';
+          layer.style.width = Math.floor(cssVp.width) + 'px';
+          layer.style.height = Math.floor(cssVp.height) + 'px';
+          layer.style.setProperty('--scale-factor', String(cssVp.scale));
+          el.appendChild(layer);
+          try {
+            pdfjsLib.renderTextLayer({
+              textContent: textContent,
+              container: layer,
+              viewport: cssVp,
+              textDivs: []
+            });
+          } catch (e) { /* text layer unsupported; selection just won't work */ }
+        }).catch(function () { /* ignore */ });
+      }
+
+      function renderPage(i) {
+        if (state.rendered[i] || !state.doc) return;
+        var pageNum = i + 1;
+        state.rendered[i] = true; // optimistic to avoid double render
+        state.doc.getPage(pageNum).then(function (page) {
+          var s = effectiveScaleFor(i);
+          var viewport = page.getViewport({ scale: s * state.dpr });
+          var cssVp = page.getViewport({ scale: s });
+          var el = state.pageEls[i];
+          if (!el) return;
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.floor(viewport.width);
+          canvas.height = Math.floor(viewport.height);
+          canvas.style.width = Math.floor(cssVp.width) + 'px';
+          canvas.style.height = Math.floor(cssVp.height) + 'px';
+          var ctx = canvas.getContext('2d', { alpha: false });
+          el.innerHTML = '';
+          el.appendChild(canvas);
+          var task = page.render({ canvasContext: ctx, viewport: viewport });
+          state.renderTasks[i] = task;
+          task.promise.then(function () {
+            state.renderTasks[i] = null;
+            buildTextLayer(page, cssVp, el);
+          }).catch(function () {
+            state.renderTasks[i] = null;
+          });
+        }).catch(function () {
+          state.rendered[i] = false;
+        });
+      }
+
+      function setupObserver() {
+        if (state.observer) state.observer.disconnect();
+        state.observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            var i = parseInt(entry.target.getAttribute('data-index'), 10);
+            if (entry.isIntersecting) {
+              renderPage(i);
+            } else if (!entry.isIntersecting && entry.intersectionRatio === 0) {
+              // free far pages to keep memory bounded
+              clearPage(i);
+            }
+          });
+        }, { root: viewerEl, rootMargin: '400px 0px 400px 0px', threshold: [0, 0.01] });
+
+        for (var i = 0; i < state.pageEls.length; i++) {
+          state.observer.observe(state.pageEls[i]);
+        }
+      }
+
+      var scrollTimer = null;
+      function onScroll() {
+        if (scrollTimer) return;
+        scrollTimer = setTimeout(function () {
+          scrollTimer = null;
+          updateCurrentPage();
+        }, 120);
+      }
+
+      function updateCurrentPage() {
+        var anchor = viewerEl.scrollTop + viewerEl.clientHeight * 0.35;
+        var best = 1;
+        for (var i = 0; i < state.pageEls.length; i++) {
+          var el = state.pageEls[i];
+          if (el.offsetTop <= anchor) best = i + 1; else break;
+        }
+        if (best !== state.currentPage) {
+          state.currentPage = best;
+          notify('onPageChange', best);
+        }
+      }
+
+      function scrollToPage(n, smooth) {
+        var i = Math.max(0, Math.min(state.total - 1, n - 1));
+        var el = state.pageEls[i];
+        if (!el) return;
+        renderPage(i);
+        viewerEl.scrollTo({ top: el.offsetTop - 6, behavior: smooth ? 'smooth' : 'auto' });
+        state.currentPage = i + 1;
+      }
+
+      function reflow(keepPage) {
+        var anchorPage = keepPage || state.currentPage;
+        layoutPlaceholders();
+        // re-render currently rendered pages at new scale
+        for (var i = 0; i < state.total; i++) {
+          if (state.rendered[i]) { state.rendered[i] = false; renderPage(i); }
+        }
+        scrollToPage(anchorPage, false);
+      }
+
+      // Extract the PDF's real bookmarks and map each to a 1-based page number.
+      function emitOutline(doc, token) {
+        if (!doc || typeof doc.getOutline !== 'function') return;
+        doc.getOutline().then(function (outline) {
+          if (!outline || !outline.length || token !== state.loadToken) return;
+          var flat = [];
+          (function walk(items, depth) {
+            items.forEach(function (it) {
+              if (flat.length >= 80) return;
+              flat.push({ title: (it.title || '').trim(), dest: it.dest, depth: depth });
+              if (it.items && it.items.length && depth < 1) walk(it.items, depth + 1);
+            });
+          })(outline, 0);
+
+          var jobs = flat.map(function (e) {
+            return Promise.resolve()
+              .then(function () {
+                return (typeof e.dest === 'string') ? doc.getDestination(e.dest) : e.dest;
+              })
+              .then(function (dest) {
+                if (!dest || !dest[0]) return null;
+                return doc.getPageIndex(dest[0]);
+              })
+              .then(function (idx) { e.page = (typeof idx === 'number') ? idx + 1 : 0; })
+              .catch(function () { e.page = 0; });
+          });
+
+          Promise.all(jobs).then(function () {
+            if (token !== state.loadToken) return;
+            var clean = flat
+              .filter(function (e) { return e.title && e.page > 0; })
+              .map(function (e) { return { title: e.title, page: e.page, depth: e.depth }; });
+            if (clean.length) notify('onOutline', JSON.stringify(clean));
+          });
+        }).catch(function () { /* no outline */ });
+      }
+
+      // ---- Public API (called from ArkTS via runJavaScript) ----
+      window.SciViewer = {
+        load: function (url, page, night, scaleMode) {
+          var token = ++state.loadToken;
+          state.scaleMode = scaleMode || 'width';
+          state.night = !!night;
+          pagesEl.className = state.night ? 'night' : '';
+          showStatus('正在加载 PDF...');
+          pagesEl.innerHTML = '';
+          state.pageEls = [];
+          state.rendered = [];
+          state.renderTasks = [];
+          state.baseViewports = [];
+
+          if (!pdfjsLib) { showStatus('PDF 引擎未就绪'); notify('onError', 'pdfjs missing'); return; }
+
+          var task = pdfjsLib.getDocument({ url: url, withCredentials: false });
+          task.promise.then(function (doc) {
+            if (token !== state.loadToken) return; // superseded
+            state.doc = doc;
+            state.total = doc.numPages;
+            var chain = Promise.resolve();
+            var i;
+            for (i = 0; i < state.total; i++) {
+              (function (idx) {
+                chain = chain.then(function () {
+                  return doc.getPage(idx + 1).then(function (p) {
+                    state.baseViewports[idx] = p.getViewport({ scale: 1 });
+                  });
+                });
+              })(i);
+            }
+            chain.then(function () {
+              if (token !== state.loadToken) return;
+              for (var k = 0; k < state.total; k++) {
+                var el = document.createElement('div');
+                el.className = 'page';
+                el.setAttribute('data-index', String(k));
+                el.innerHTML = '<div class="placeholder"></div>';
+                pagesEl.appendChild(el);
+                state.pageEls[k] = el;
+                state.rendered[k] = false;
+              }
+              layoutPlaceholders();
+              setupObserver();
+              showStatus('');
+              notify('onReady', state.total);
+              var start = Math.max(1, Math.min(state.total, page || 1));
+              scrollToPage(start, false);
+              updateCurrentPage();
+              emitOutline(doc, token);
+            });
+          }).catch(function (err) {
+            if (token !== state.loadToken) return;
+            showStatus('PDF 加载失败，请检查网络');
+            notify('onError', (err && err.message) ? err.message : 'load failed');
+          });
+        },
+
+        goToPage: function (n, smooth) { scrollToPage(n, smooth !== false); },
+
+        setScale: function (mode) {
+          if (mode === 'width' || mode === 'page') {
+            state.scaleMode = mode;
+          } else {
+            var num = parseFloat(mode);
+            if (!isNaN(num)) { state.scaleMode = 'custom'; state.scale = num; }
+          }
+          reflow();
+        },
+
+        zoomBy: function (delta) {
+          // capture current effective scale as the new custom base
+          var i = Math.max(0, state.currentPage - 1);
+          var current = effectiveScaleFor(i);
+          var next = current * (1 + (parseFloat(delta) || 0));
+          next = Math.max(0.4, Math.min(4, next));
+          state.scaleMode = 'custom';
+          state.scale = next;
+          reflow();
+        },
+
+        setNight: function (night) {
+          state.night = !!night;
+          pagesEl.className = state.night ? 'night' : '';
+        },
+
+        // Extract the plain text of a page and hand it back to ArkTS (for AI context).
+        requestPageText: function (n) {
+          if (!state.doc) { notify('onPageText', ''); return; }
+          var idx = Math.max(1, Math.min(state.total, parseInt(n, 10) || state.currentPage));
+          state.doc.getPage(idx).then(function (page) {
+            return page.getTextContent();
+          }).then(function (tc) {
+            var text = tc.items.map(function (it) { return it.str; }).join(' ');
+            text = text.replace(/\s+/g, ' ').trim();
+            if (text.length > 4000) { text = text.substring(0, 4000); }
+            notify('onPageText', text);
+          }).catch(function () { notify('onPageText', ''); });
+        },
+
+        getZoomPercent: function () {
+          var i = Math.max(0, state.currentPage - 1);
+          var vp1 = state.baseViewports[i];
+          if (!vp1) return 100;
+          return Math.round(effectiveScaleFor(i) / fitWidthScale(vp1) * 100);
+        }
+      };
+
+      viewerEl.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', function () {
+        if (state.total > 0 && (state.scaleMode === 'width' || state.scaleMode === 'page')) {
+          reflow();
+        }
+      });
+
+      // Report the user's current text selection back to ArkTS (for 标注 / AI 引用).
+      var selTimer = null;
+      function reportSelection() {
+        var sel = window.getSelection ? window.getSelection() : null;
+        var text = sel ? String(sel.toString()) : '';
+        text = text.replace(/\s+/g, ' ').trim();
+        if (text.length > 2000) { text = text.substring(0, 2000); }
+        notify('onSelection', text);
+      }
+      document.addEventListener('selectionchange', function () {
+        if (selTimer) return;
+        selTimer = setTimeout(function () { selTimer = null; reportSelection(); }, 250);
+      });
+
+      // Distinguish a tap (toggle reader chrome) from a scroll/drag gesture.
+      var touchOrigin = null;
+      viewerEl.addEventListener('touchstart', function (e) {
+        if (e.touches.length === 1) {
+          touchOrigin = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+        } else {
+          touchOrigin = null;
+        }
+      }, { passive: true });
+      viewerEl.addEventListener('touchend', function (e) {
+        if (!touchOrigin) return;
+        var ch = e.changedTouches[0];
+        var dx = Math.abs(ch.clientX - touchOrigin.x);
+        var dy = Math.abs(ch.clientY - touchOrigin.y);
+        var dt = Date.now() - touchOrigin.t;
+        touchOrigin = null;
+        if (dx < 12 && dy < 12 && dt < 300) {
+          notify('onTap', 1);
+        }
+      }, { passive: true });
+
+      notify('onBoot', 1);
+    })();
+  </script>
+</body>
+</html>

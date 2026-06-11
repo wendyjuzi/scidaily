@@ -1,9 +1,13 @@
 import http from '@ohos.net.http';
+import { common } from '@kit.AbilityKit';
+import preferences from '@ohos.data.preferences';
 import { API_BASE_URL } from '../config/AppConfig';
 import { PaperItem, PaperPage, ReadingProgress } from '../models/Paper';
 import { AppErrorCode, AppException } from '../utils/AppError';
 import { authService } from './AuthService';
 import { httpClient } from './HttpClient';
+
+const PAPER_PREFS_NAME: string = 'scidaily_paper_reader';
 
 interface PaperDto {
   id: string;
@@ -36,6 +40,7 @@ interface ReadingProgressDto {
 }
 
 class PaperService {
+  private storage?: preferences.Preferences;
   private localPapers: PaperItem[] = [
     {
       id: 'paper-local-rag',
@@ -66,6 +71,14 @@ class PaperService {
       createdAt: '2026-06-04'
     }
   ];
+
+  async init(context: common.UIAbilityContext): Promise<void> {
+    try {
+      this.storage = await preferences.getPreferences(context, PAPER_PREFS_NAME);
+    } catch (error) {
+      this.storage = undefined;
+    }
+  }
 
   async listPapers(offset: number, limit: number): Promise<PaperPage> {
     try {
@@ -100,6 +113,7 @@ class PaperService {
   }
 
   async saveProgress(paperId: string, currentPage: number, progress: number): Promise<void> {
+    this.saveProgressLocal(paperId, currentPage, progress);
     if (!authService.isLoggedIn()) {
       return;
     }
@@ -112,6 +126,50 @@ class PaperService {
         progress
       })
     });
+  }
+
+  // Annotations are kept locally (per paper) as a JSON string; PDFReader owns the shape.
+  saveAnnotations(paperId: string, json: string): void {
+    if (!this.storage) {
+      return;
+    }
+    try {
+      this.storage.putSync(`paper_${paperId}_annotations`, json);
+      this.storage.flushSync();
+    } catch (error) {
+      return;
+    }
+  }
+
+  getAnnotations(paperId: string): string {
+    if (!this.storage) {
+      return '';
+    }
+    try {
+      const value = this.storage.getSync(`paper_${paperId}_annotations`, '');
+      return typeof value === 'string' ? value : '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  async getProgress(paperId: string): Promise<ReadingProgress | undefined> {
+    if (authService.isLoggedIn()) {
+      try {
+        const response = await httpClient.request({
+          path: `/papers/${paperId}/progress`,
+          method: http.RequestMethod.GET,
+          token: authService.getToken()
+        });
+        const dto = JSON.parse(response) as ReadingProgressDto;
+        const progress = this.progressFromDto(dto);
+        this.saveProgressLocal(paperId, progress.currentPage, progress.progress);
+        return progress;
+      } catch (error) {
+        return this.getProgressLocal(paperId);
+      }
+    }
+    return this.getProgressLocal(paperId);
   }
 
   normalizePdfUrl(url: string): string {
@@ -151,6 +209,56 @@ class PaperService {
       publishedAt: dto.published_at,
       createdAt: dto.created_at
     };
+  }
+
+  private progressFromDto(dto: ReadingProgressDto): ReadingProgress {
+    return {
+      paperId: dto.paper_id,
+      currentPage: dto.current_page,
+      progress: dto.progress,
+      updatedAt: dto.updated_at
+    };
+  }
+
+  private saveProgressLocal(paperId: string, currentPage: number, progress: number): void {
+    if (!this.storage) {
+      return;
+    }
+    try {
+      this.storage.putSync(`paper_${paperId}_page`, currentPage);
+      this.storage.putSync(`paper_${paperId}_progress`, progress);
+      this.storage.putSync(`paper_${paperId}_updated_at`, this.nowText());
+      this.storage.flushSync();
+    } catch (error) {
+      return;
+    }
+  }
+
+  private getProgressLocal(paperId: string): ReadingProgress | undefined {
+    if (!this.storage) {
+      return undefined;
+    }
+    try {
+      const storedProgress = this.storage.getSync(`paper_${paperId}_progress`, -1);
+      if (typeof storedProgress !== 'number' || storedProgress < 0) {
+        return undefined;
+      }
+      const storedPage = this.storage.getSync(`paper_${paperId}_page`, 1);
+      const updatedAt = this.storage.getSync(`paper_${paperId}_updated_at`, '');
+      return {
+        paperId,
+        currentPage: typeof storedPage === 'number' ? storedPage : 1,
+        progress: storedProgress,
+        updatedAt: typeof updatedAt === 'string' ? updatedAt : ''
+      };
+    } catch (error) {
+      return undefined;
+    }
+  }
+
+  private nowText(): string {
+    const date = new Date();
+    return date.toISOString();
   }
 
   private isPlaceholderPaper(item: PaperItem): boolean {

@@ -19,15 +19,36 @@ struct CreatePost {
   @State statusText: string = '';
 
   aboutToAppear(): void {
+    this.applyRouteDraft();
     dailyPostService.listCategories().then((items: TopicCategory[]) => {
       this.categories = items.filter((item: TopicCategory) => item.id !== 'all');
-      if (this.categories.length > 0) {
+      if (this.categories.length > 0 && this.categoryId.length === 0) {
         this.categoryId = this.categories[0].id;
       }
     });
     dailyPostService.listTags().then((items: TopicTag[]) => {
       this.tags = items;
     });
+  }
+
+  private applyRouteDraft(): void {
+    const params = (router.getParams() as Record<string, string> | undefined) ?? {};
+    const title = params.title ?? '';
+    const content = params.content ?? '';
+    const categoryId = params.categoryId ?? '';
+    const tagIds = params.tagIds ?? '';
+    if (title.length > 0) {
+      this.title = title;
+    }
+    if (content.length > 0) {
+      this.content = content;
+    }
+    if (categoryId.length > 0) {
+      this.categoryId = categoryId;
+    }
+    if (tagIds.length > 0) {
+      this.tagIds = tagIds.split(',').filter((id: string) => id.length > 0);
+    }
   }
 
   private selectedCategoryName(): string {
