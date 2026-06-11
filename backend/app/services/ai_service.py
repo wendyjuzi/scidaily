@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 
@@ -29,6 +31,34 @@ MODE_TASKS: Dict[str, str] = {
     "qa": "输入是自由科研问题。请围绕方法、指标、实验设计或论文写作给出直接回答、判断依据和下一步动作。",
 }
 
+CREATOR_MODE_TITLES: Dict[str, str] = {
+    "draft": "从零生成草稿",
+    "organize": "整理零散记录",
+    "meta": "标题摘要生成",
+    "polish_academic": "正文润色·学术风",
+    "polish_brief": "正文润色·简洁风",
+    "polish_share": "正文润色·社区分享风",
+    "experiment_template": "实验记录模板",
+    "literature_template": "文献阅读模板",
+    "review_template": "复盘模板",
+    "preflight": "发布前检查",
+    "pdf_daily": "从 PDF 生成日报",
+}
+
+CREATOR_MODE_TASKS: Dict[str, str] = {
+    "draft": "根据研究想法、实验目标或论文标题，生成一篇科研日报初稿。",
+    "organize": "把实验日志、会议记录、阅读笔记整理成结构化科研日报。",
+    "meta": "根据现有草稿自动生成标题、摘要、标签和话题。",
+    "polish_academic": "把正文润色为更规范的学术风格，保留事实，不新增编造数据。",
+    "polish_brief": "把正文润色为简洁风格，压缩重复表达，突出结论和下一步。",
+    "polish_share": "把正文润色为社区分享风格，表达自然，但保持科研准确性。",
+    "experiment_template": "自动补充实验目的、方法、结果、问题、下一步。",
+    "literature_template": "自动补充研究问题、核心方法、数据实验、结论启发。",
+    "review_template": "生成成功点、失败原因、改进计划、可复用经验。",
+    "preflight": "检查是否缺少方法、数据、指标、结论、风险说明，并给出修改建议。",
+    "pdf_daily": "根据文献库 PDF 信息生成阅读日报草稿。",
+}
+
 
 class AiProviderError(RuntimeError):
     pass
@@ -53,6 +83,20 @@ def generate_workbench_answer(mode: str, prompt: str, history: Optional[List[Dic
     cfg = load_ai_config()
     payload = build_chat_payload(mode, title, prompt, cfg.model, history or [])
     return call_chat_completions(cfg, payload)
+
+
+def creator_mode_title(mode: str) -> str:
+    if mode not in CREATOR_MODE_TITLES:
+        raise ValueError("不支持的创作 AI 类型。")
+    return CREATOR_MODE_TITLES[mode]
+
+
+def generate_creator_result(mode: str, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    title = creator_mode_title(mode)
+    cfg = load_ai_config()
+    payload = build_creator_payload(mode, title, prompt, context, cfg.model)
+    raw_text = call_chat_completions(cfg, payload)
+    return parse_creator_response(raw_text)
 
 
 def load_ai_config() -> AiConfig:
@@ -147,6 +191,104 @@ def build_chat_payload(
         "messages": messages,
         "temperature": float(os.getenv("AI_TEMPERATURE", "0.4")),
     }
+
+
+def build_creator_payload(
+    mode: str,
+    title: str,
+    prompt: str,
+    context: Dict[str, Any],
+    model: str,
+) -> Dict[str, object]:
+    if not model:
+        raise ValueError("未配置 AI_MODEL。SiliconFlow 等服务需要显式设置模型名。")
+    user_input = prompt.strip() or "请基于当前草稿继续辅助创作。"
+    current_context = (
+        f"当前标题：{context.get('title', '')}\n"
+        f"当前摘要：{context.get('summary', '')}\n"
+        f"当前正文：{context.get('content', '')}\n"
+        f"当前分类：{context.get('category_name', '')}\n"
+        f"当前标签：{', '.join(context.get('tags', []))}\n"
+        f"选中文献：{context.get('paper_title', '')}\n"
+        f"文献摘要：{context.get('paper_abstract', '')}\n"
+        f"DOI：{context.get('paper_doi', '')}\n"
+        f"来源链接：{context.get('paper_source_url', '')}\n"
+        f"PDF 链接：{context.get('paper_pdf_url', '')}"
+    )
+    system_prompt = (
+        "你是科研日报 APP 的创作页 AI 助手。请用中文输出，帮助用户写科研日报。"
+        "不要编造不存在的实验数据、论文事实、DOI 或引用；信息不足时可以在 note 字段说明需要补充什么。"
+        "如果任务涉及 PDF 或文献，请优先依据用户输入、当前草稿、文献标题、摘要、DOI、来源链接和 PDF 链接，不要假装已经读取完整 PDF。"
+        "必须只返回 JSON，不要 Markdown 代码块，不要额外解释。"
+        "JSON 字段固定为：title、summary、content、tags、topic、note。"
+        "tags 是字符串数组，建议 2 到 5 个短标签；topic 是学科或研究方向。"
+    )
+    user_prompt = (
+        f"功能：{title}\n"
+        f"任务要求：{CREATOR_MODE_TASKS[mode]}\n\n"
+        f"用户输入：\n{user_input}\n\n"
+        f"当前草稿上下文：\n{current_context}\n\n"
+        "请生成可以直接应用到创作页的 JSON。"
+    )
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": float(os.getenv("AI_TEMPERATURE", "0.4")),
+    }
+
+
+def parse_creator_response(raw_text: str) -> Dict[str, Any]:
+    text = raw_text.strip()
+    json_text = extract_json_object(text)
+    try:
+        data = json.loads(json_text)
+    except ValueError:
+        return {
+            "title": "",
+            "summary": "",
+            "content": text,
+            "tags": [],
+            "topic": "",
+            "note": "AI 返回了非结构化内容，已作为正文候选。",
+        }
+    return {
+        "title": safe_text(data.get("title")),
+        "summary": safe_text(data.get("summary")),
+        "content": safe_text(data.get("content")),
+        "tags": normalize_tags(data.get("tags")),
+        "topic": safe_text(data.get("topic")),
+        "note": safe_text(data.get("note")),
+    }
+
+
+def extract_json_object(text: str) -> str:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?", "", cleaned).strip()
+        cleaned = re.sub(r"```$", "", cleaned).strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start >= 0 and end > start:
+        return cleaned[start:end + 1]
+    return cleaned
+
+
+def safe_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def normalize_tags(value: Any) -> List[str]:
+    if isinstance(value, list):
+        return [safe_text(item).lstrip("#") for item in value if safe_text(item).lstrip("#")]
+    if isinstance(value, str):
+        parts = re.split(r"[,，、#\s]+", value)
+        return [part.strip().lstrip("#") for part in parts if part.strip().lstrip("#")]
+    return []
 
 
 def sanitize_history(history: List[Dict[str, str]]) -> List[Dict[str, str]]:

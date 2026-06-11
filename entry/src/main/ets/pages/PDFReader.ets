@@ -91,7 +91,30 @@ struct PDFReader {
   aboutToAppear(): void {
     const params = (router.getParams() as Record<string, string> | undefined) ?? {};
     const paperId = params.paperId ?? '';
+    const pdfUrl = params.pdfUrl ?? '';
+    const pdfTitle = params.pdfTitle ?? '上传 PDF';
     if (paperId.length === 0) {
+      if (pdfUrl.length > 0) {
+        const item: PaperItem = {
+          id: this.uploadedPdfId(pdfUrl),
+          title: pdfTitle,
+          abstract: '用户上传的 PDF。可在阅读器中选择文字、记录标注，再生成阅读日报。',
+          authors: ['本地上传'],
+          categoryId: 'ai',
+          categoryName: '人工智能',
+          tags: ['PDF'],
+          tagIds: [],
+          sourceUrl: pdfUrl,
+          pdfUrl: pdfUrl,
+          publishedAt: '',
+          createdAt: ''
+        };
+        this.paper = item;
+        this.basePdfUrl = paperService.normalizePdfUrl(pdfUrl);
+        this.loadAnnotations(item.id);
+        this.loadLastProgress(item.id);
+        return;
+      }
       this.statusText = '未找到论文 ID';
       return;
     }
@@ -105,6 +128,14 @@ struct PDFReader {
       this.loadAnnotations(item.id);
       this.loadLastProgress(item.id);
     });
+  }
+
+  private uploadedPdfId(url: string): string {
+    let hash = 0;
+    for (let index = 0; index < url.length; index += 1) {
+      hash = ((hash * 31) + url.charCodeAt(index)) % 1000000007;
+    }
+    return `uploaded-${hash}`;
   }
 
   private loadAnnotations(paperId: string): void {

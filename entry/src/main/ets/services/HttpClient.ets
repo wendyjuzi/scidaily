@@ -121,6 +121,24 @@ class HttpClient {
     if (detail === 'Parent comment not found') {
       return '要回复的评论不存在。';
     }
+    if (detail === 'Unsupported image type') {
+      return '请选择 jpg、png、webp 或 gif 图片。';
+    }
+    if (detail === 'Image is too large') {
+      return '图片太大，请换一张较小的图片。';
+    }
+    if (detail === 'Invalid image content') {
+      return '图片内容读取失败，请重新选择。';
+    }
+    if (detail === 'Unsupported PDF type') {
+      return '请选择 PDF 文件。';
+    }
+    if (detail === 'PDF is too large') {
+      return 'PDF 太大，请选择 30MB 以内的文件。';
+    }
+    if (detail === 'Invalid PDF content') {
+      return 'PDF 内容读取失败，请重新选择。';
+    }
     return detail;
   }
 }
