@@ -19,6 +19,10 @@ from app.schemas import (
     CommentCreateRequest,
     CommentItem,
     CommentListResponse,
+    InspirationCreateRequest,
+    InspirationDraftResponse,
+    InspirationItem,
+    InspirationUpdateRequest,
     InteractionSummary,
     MessageSettings,
     NotificationItem,
@@ -162,6 +166,18 @@ class AppStore:
                 summary TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 status TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS user_inspirations (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                scene TEXT NOT NULL DEFAULT 'idea',
+                source TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
@@ -489,12 +505,15 @@ class AppStore:
         like_count = self._count_table("user_likes", user_id)
         history_count = self._count_table("user_browsing_history", user_id)
         return PersonalStats(
-            post_count=post_count,
+            post_count=post_count + self.get_inspiration_count(user_id),
             collection_count=collection_count,
             like_count=like_count,
             history_count=history_count,
             continuous_days=self._continuous_days(user_id),
         )
+
+    def get_inspiration_count(self, user_id: int) -> int:
+        return self._count_table("user_inspirations", user_id)
 
     def get_personal_items(self, table_key: str, user_id: int) -> List[PersonalItem]:
         table = self._table_for_key(table_key)
@@ -597,6 +616,132 @@ class AppStore:
     def clear_history(self, user_id: int) -> None:
         self.conn.execute("DELETE FROM user_browsing_history WHERE user_id = ?", (user_id,))
         self.conn.commit()
+
+    def list_inspirations(self, user_id: int) -> List[InspirationItem]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM user_inspirations
+            WHERE user_id = ?
+            ORDER BY updated_at DESC, created_at DESC
+            """,
+            (user_id,),
+        ).fetchall()
+        return [self._inspiration_from_row(row) for row in rows]
+
+    def create_inspiration(self, user_id: int, payload: InspirationCreateRequest) -> InspirationItem:
+        content = payload.content.strip()
+        if not content:
+            raise ValueError("Inspiration content is required")
+        if len(content) > 1200:
+            raise ValueError("Inspiration content is too long")
+        scene = self._normalize_inspiration_scene(payload.scene)
+        source = (payload.source or "").strip()[:120]
+        created_at = now_text()
+        inspiration_id = f"inspiration-{secrets.token_hex(8)}"
+        self.conn.execute(
+            """
+            INSERT INTO user_inspirations (
+                id, user_id, content, scene, source, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (inspiration_id, user_id, content, scene, source, "active", created_at, created_at),
+        )
+        self.conn.commit()
+        return self.get_inspiration(user_id, inspiration_id)
+
+    def get_inspiration(self, user_id: int, inspiration_id: str) -> InspirationItem:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM user_inspirations
+            WHERE user_id = ? AND id = ?
+            """,
+            (user_id, inspiration_id),
+        ).fetchone()
+        if row is None:
+            raise ValueError("Inspiration not found")
+        return self._inspiration_from_row(row)
+
+    def update_inspiration(self, user_id: int, inspiration_id: str, payload: InspirationUpdateRequest) -> InspirationItem:
+        self.get_inspiration(user_id, inspiration_id)
+        fields = payload.model_dump(exclude_none=True)
+        assignments = []
+        values: list[object] = []
+        if "content" in fields:
+            content = str(fields["content"]).strip()
+            if not content:
+                raise ValueError("Inspiration content is required")
+            if len(content) > 1200:
+                raise ValueError("Inspiration content is too long")
+            assignments.append("content = ?")
+            values.append(content)
+        if "scene" in fields:
+            assignments.append("scene = ?")
+            values.append(self._normalize_inspiration_scene(str(fields["scene"])))
+        if "source" in fields:
+            assignments.append("source = ?")
+            values.append(str(fields["source"]).strip()[:120])
+        if "status" in fields:
+            assignments.append("status = ?")
+            values.append(self._normalize_inspiration_status(str(fields["status"])))
+        if assignments:
+            assignments.append("updated_at = ?")
+            values.append(now_text())
+            values.extend([user_id, inspiration_id])
+            self.conn.execute(
+                f"UPDATE user_inspirations SET {', '.join(assignments)} WHERE user_id = ? AND id = ?",
+                values,
+            )
+            self.conn.commit()
+        return self.get_inspiration(user_id, inspiration_id)
+
+    def delete_inspiration(self, user_id: int, inspiration_id: str) -> None:
+        self.conn.execute(
+            "DELETE FROM user_inspirations WHERE user_id = ? AND id = ?",
+            (user_id, inspiration_id),
+        )
+        self.conn.commit()
+
+    def build_inspiration_draft(self, user_id: int, inspiration_id: str) -> InspirationDraftResponse:
+        item = self.get_inspiration(user_id, inspiration_id)
+        title_seed = item.content.splitlines()[0].strip()
+        if len(title_seed) > 22:
+            title_seed = f"{title_seed[:22]}..."
+        scene_title = self._inspiration_scene_title(item.scene)
+        title = f"{scene_title}：{title_seed}" if title_seed else scene_title
+        summary = self._inspiration_summary(item.content)
+        category_id = self._category_for_inspiration(item.content)
+        tag_ids = self._tag_ids_for_inspiration(item.content, category_id)
+        source_line = f"来源：{item.source}\n\n" if item.source else ""
+        content = (
+            f"{source_line}"
+            f"一、原始灵感\n{item.content}\n\n"
+            "二、可以展开的问题\n"
+            "- 这个想法想解决什么科研问题？\n"
+            "- 目前已有证据、数据或现象是什么？\n"
+            "- 还缺少哪些实验、文献或对照？\n\n"
+            "三、今日推进\n"
+            "- 已完成：\n"
+            "- 新发现：\n"
+            "- 遇到的问题：\n\n"
+            "四、下一步计划\n"
+            "- 优先验证：\n"
+            "- 需要补充的数据/材料：\n"
+            "- 可发布到社区讨论的问题："
+        )
+        self.update_inspiration(
+            user_id,
+            inspiration_id,
+            InspirationUpdateRequest(status="used"),
+        )
+        return InspirationDraftResponse(
+            title=title,
+            summary=summary,
+            content=content,
+            category_id=category_id,
+            tag_ids=tag_ids,
+        )
 
     def list_daily_templates(self) -> List[DailyTemplate]:
         return [
@@ -1121,6 +1266,17 @@ class AppStore:
             created_at=row["created_at"],
         )
 
+    def _inspiration_from_row(self, row: sqlite3.Row) -> InspirationItem:
+        return InspirationItem(
+            id=row["id"],
+            content=row["content"],
+            scene=row["scene"],
+            source=row["source"],
+            status=row["status"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
     def _json_list(self, raw: str) -> List[str]:
         try:
             value = json.loads(raw)
@@ -1129,6 +1285,73 @@ class AppStore:
         if not isinstance(value, list):
             return []
         return [str(item) for item in value]
+
+    def _normalize_inspiration_scene(self, scene: str) -> str:
+        value = scene.strip().lower()
+        if value in ["idea", "experiment", "paper", "meeting", "question"]:
+            return value
+        return "idea"
+
+    def _normalize_inspiration_status(self, status_text: str) -> str:
+        value = status_text.strip().lower()
+        if value in ["active", "used", "archived"]:
+            return value
+        raise ValueError("Unsupported inspiration status")
+
+    def _inspiration_scene_title(self, scene: str) -> str:
+        title_map = {
+            "idea": "科研灵感",
+            "experiment": "实验想法",
+            "paper": "文献启发",
+            "meeting": "组会记录",
+            "question": "待验证问题",
+        }
+        return title_map.get(scene, "科研灵感")
+
+    def _inspiration_summary(self, content: str) -> str:
+        text = re.sub(r"\s+", " ", content).strip()
+        if len(text) <= 68:
+            return text
+        return f"{text[:68]}..."
+
+    def _category_for_inspiration(self, content: str) -> str:
+        text = content.lower()
+        if any(keyword in text for keyword in ["单细胞", "免疫", "基因", "蛋白", "细胞", "生物", "组学"]):
+            return "bio"
+        if any(keyword in text for keyword in ["材料", "钙钛矿", "催化", "电池", "光伏", "合金"]):
+            return "materials"
+        if any(keyword in text for keyword in ["临床", "医学", "患者", "诊断", "药物", "疾病"]):
+            return "medicine"
+        return "ai"
+
+    def _tag_ids_for_inspiration(self, content: str, category_id: str) -> List[str]:
+        text = content.lower()
+        candidates = []
+        if any(keyword in text for keyword in ["agent", "智能体", "工具调用", "自动化"]):
+            candidates.append("ai-agent")
+        if any(keyword in text for keyword in ["llm", "大模型", "论文", "rag", "transformer"]):
+            candidates.append("llm-paper")
+        if any(keyword in text for keyword in ["单细胞", "细胞"]):
+            candidates.append("single-cell")
+        if any(keyword in text for keyword in ["免疫", "炎症"]):
+            candidates.append("immunology")
+        if any(keyword in text for keyword in ["钙钛矿", "材料", "光伏"]):
+            candidates.append("perovskite")
+        if any(keyword in text for keyword in ["临床", "诊断", "医学"]):
+            candidates.append("clinical-ai")
+        rows = self.conn.execute(
+            "SELECT id FROM research_tags WHERE category_id = ?",
+            (category_id,),
+        ).fetchall()
+        available = {row["id"] for row in rows}
+        matched = [tag_id for tag_id in candidates if tag_id in available]
+        if matched:
+            return list(dict.fromkeys(matched))[:3]
+        fallback = self.conn.execute(
+            "SELECT id FROM research_tags WHERE category_id = ? ORDER BY created_at ASC LIMIT 1",
+            (category_id,),
+        ).fetchone()
+        return [fallback["id"]] if fallback is not None else []
 
     def _validate_category_and_tags(self, category_id: str, tag_ids: List[str]) -> None:
         if self.conn.execute("SELECT id FROM topic_categories WHERE id = ?", (category_id,)).fetchone() is None:
@@ -2084,6 +2307,32 @@ class AppStore:
                 ),
             ],
         }
+        inspirations = [
+            (
+                "inspiration-001",
+                "RAG 文献问答如果把 DOI、页码和原文句子一起存下来，组会汇报时更容易说明证据来源。",
+                "idea",
+                "阅读 PDF 时想到",
+                "active",
+                "2026-06-03T09:12:00+00:00",
+            ),
+            (
+                "inspiration-002",
+                "钙钛矿稳定性实验要把湿度、温度、光照强度拆成三个变量，先做小规模正交对照。",
+                "experiment",
+                "实验讨论",
+                "active",
+                "2026-06-02T16:30:00+00:00",
+            ),
+            (
+                "inspiration-003",
+                "单细胞状态标注可以增加一个“证据等级”：标志基因、通路活性、参考图谱三者都支持才算高可信。",
+                "paper",
+                "文献阅读",
+                "used",
+                "2026-06-01T20:05:00+00:00",
+            ),
+        ]
         for table, rows in samples.items():
             for row in rows:
                 item_id = f"u{user_id}-{row[0]}"
@@ -2095,6 +2344,16 @@ class AppStore:
                     """,
                     (item_id, user_id, row[1], row[2], row[3], row[4]),
                 )
+        for item in inspirations:
+            inspiration_id = f"u{user_id}-{item[0]}"
+            self.conn.execute(
+                """
+                INSERT OR IGNORE INTO user_inspirations
+                (id, user_id, content, scene, source, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (inspiration_id, user_id, item[1], item[2], item[3], item[4], item[5], item[5]),
+            )
         self.conn.commit()
 
     def _count_table(self, table: str, user_id: int) -> int:

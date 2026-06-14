@@ -183,6 +183,41 @@ class InteractionState(BaseModel):
     active: bool
 
 
+class InspirationItem(BaseModel):
+    id: str
+    content: str
+    scene: str
+    source: str
+    status: str
+    created_at: str
+    updated_at: str
+
+
+class InspirationListResponse(BaseModel):
+    items: List[InspirationItem]
+
+
+class InspirationCreateRequest(BaseModel):
+    content: str
+    scene: str = "idea"
+    source: Optional[str] = None
+
+
+class InspirationUpdateRequest(BaseModel):
+    content: Optional[str] = None
+    scene: Optional[str] = None
+    source: Optional[str] = None
+    status: Optional[str] = None
+
+
+class InspirationDraftResponse(BaseModel):
+    title: str
+    summary: str
+    content: str
+    category_id: str
+    tag_ids: List[str]
+
+
 class DailyTemplate(BaseModel):
     id: str
     title: str

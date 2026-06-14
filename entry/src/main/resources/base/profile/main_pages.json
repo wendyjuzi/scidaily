@@ -12,6 +12,7 @@
     "pages/TopicDetail",
     "pages/ProfileEdit",
     "pages/PersonalList",
+    "pages/InspirationBox",
     "pages/PaperLibrary",
     "pages/PDFReader",
     "pages/ResearchDashboard",

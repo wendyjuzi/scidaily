@@ -29,6 +29,11 @@ from app.schemas import (
     DailyTemplate,
     ImageUploadRequest,
     ImageUploadResponse,
+    InspirationCreateRequest,
+    InspirationDraftResponse,
+    InspirationItem,
+    InspirationListResponse,
+    InspirationUpdateRequest,
     LoginRequest,
     MessageSettings,
     NewsItem,
@@ -648,6 +653,45 @@ def add_my_history(payload: PersonalItemActionRequest, current_user: UserProfile
 def clear_my_history(current_user: UserProfile = Depends(get_current_user)):
     store.clear_history(current_user.id)
     return ApiMessage(message="Browsing history cleared")
+
+
+@app.get("/api/v1/users/me/inspirations", response_model=InspirationListResponse)
+def my_inspirations(current_user: UserProfile = Depends(get_current_user)):
+    return InspirationListResponse(items=store.list_inspirations(current_user.id))
+
+
+@app.post("/api/v1/users/me/inspirations", response_model=InspirationItem, status_code=status.HTTP_201_CREATED)
+def create_my_inspiration(payload: InspirationCreateRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.create_inspiration(current_user.id, payload)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.put("/api/v1/users/me/inspirations/{inspiration_id}", response_model=InspirationItem)
+def update_my_inspiration(
+    inspiration_id: str,
+    payload: InspirationUpdateRequest,
+    current_user: UserProfile = Depends(get_current_user),
+):
+    try:
+        return store.update_inspiration(current_user.id, inspiration_id, payload)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.post("/api/v1/users/me/inspirations/{inspiration_id}/draft", response_model=InspirationDraftResponse)
+def build_my_inspiration_draft(inspiration_id: str, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.build_inspiration_draft(current_user.id, inspiration_id)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.delete("/api/v1/users/me/inspirations/{inspiration_id}", response_model=ApiMessage)
+def delete_my_inspiration(inspiration_id: str, current_user: UserProfile = Depends(get_current_user)):
+    store.delete_inspiration(current_user.id, inspiration_id)
+    return ApiMessage(message="Inspiration deleted")
 
 
 @app.get("/api/v1/users/me/notifications", response_model=NotificationListResponse)
