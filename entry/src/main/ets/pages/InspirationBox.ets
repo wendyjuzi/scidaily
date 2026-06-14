@@ -75,15 +75,23 @@ struct InspirationBox {
       return;
     }
     this.generatingId = item.id;
-    this.statusText = '正在生成日报模板...';
-    inspirationService.buildDraft(item.id).then((draft) => {
-      this.pushDraft(draft);
-    }).catch((error: Error) => {
-      this.statusText = `${error.message}，已使用本地模板生成。`;
-      this.pushDraft(this.localDraftFromItem(item));
-    }).finally(() => {
-      this.generatingId = '';
+    this.statusText = '日报模板已生成';
+    this.items = this.items.map((current: InspirationItem) => {
+      if (current.id !== item.id) {
+        return current;
+      }
+      return {
+        id: current.id,
+        content: current.content,
+        scene: current.scene,
+        source: current.source,
+        status: 'used',
+        createdAt: current.createdAt,
+        updatedAt: current.updatedAt
+      };
     });
+    this.pushDraft(this.localDraftFromItem(item));
+    this.generatingId = '';
   }
 
   private pushDraft(draft: InspirationDraft): void {
