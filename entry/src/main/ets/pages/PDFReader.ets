@@ -22,6 +22,26 @@ interface PdfAnnotation {
   kind: string;
   tag: string;
   text: string;
+  rects?: string;   // JSON of AnnotRect[] in normalized page coords; empty for note-only marks
+}
+
+interface AnnotRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface AnnotPayload {
+  id: string;
+  page: number;
+  kind: string;
+  rects: AnnotRect[];
+}
+
+interface SelectionRectDto {
+  page: number;
+  rects: AnnotRect[];
 }
 
 @Entry
@@ -48,6 +68,9 @@ struct PDFReader {
   @State pdfOutline: PaperSection[] = [];
   @State currentPageText: string = '';
   @State selectedPdfText: string = '';
+  @State textSelectionMode: boolean = false;
+  private selectedRectsJson: string = '';
+  private selectedRectPage: number = 0;
   private htmlLoaded: boolean = false;
   private docRequested: boolean = false;
   private lastSavedPage: number = -1;
@@ -74,6 +97,13 @@ struct PDFReader {
     },
     'onSelection': (value: number | string) => {
       this.selectedPdfText = String(value);
+      if (this.selectedPdfText.trim().length > 0) {
+        this.textSelectionMode = false;
+        this.runViewer('SciViewer.setSelectionMode(false)');
+      }
+    },
+    'onSelectionRect': (value: number | string) => {
+      this.handleSelectionRect(String(value));
     },
     'onBoot': (value: number | string) => {
       // viewer script booted; load is triggered from onPageEnd
@@ -207,6 +237,7 @@ struct PDFReader {
     this.lastSavedPage = this.currentPage;
     this.statusText = `共 ${this.totalPages} 页`;
     this.requestPageText();
+    this.syncAnnotationsToViewer();
   }
 
   private handleViewerPageChange(page: number): void {
@@ -363,23 +394,75 @@ struct PDFReader {
     if (text.length === 0) {
       text = `${kind}：第 ${this.currentPage} 页关键内容`;
     }
+    const hasRects = this.selectedRectsJson.length > 0;
+    const page = hasRects && this.selectedRectPage > 0 ? this.selectedRectPage : this.currentPage;
     const item: PdfAnnotation = {
       id: `${Date.now()}-${this.annotations.length}`,
-      page: this.currentPage,
+      page,
       kind,
       tag: this.selectedTag,
-      text
+      text,
+      rects: hasRects ? this.selectedRectsJson : ''
     };
     this.annotations = [item].concat(this.annotations);
     this.noteDraft = '';
+    this.selectedRectsJson = '';
+    this.selectedRectPage = 0;
+    this.selectedPdfText = '';
     this.persistAnnotations();
-    this.statusText = `${kind}已加入标注列表`;
+    if (hasRects) {
+      this.syncAnnotationsToViewer();
+      this.runViewer('SciViewer.clearSelection()');
+      this.statusText = `${kind}已绘制到 P${page}`;
+    } else {
+      this.statusText = `${kind}已加入标注列表（未选中文字，仅记录）`;
+    }
   }
 
   private removeAnnotation(id: string): void {
     this.annotations = this.annotations.filter((item: PdfAnnotation) => item.id !== id);
     this.persistAnnotations();
+    this.syncAnnotationsToViewer();
     this.statusText = '已删除标注';
+  }
+
+  // Selection geometry from the viewer; attached to the next 高亮/划线/框选 mark.
+  private handleSelectionRect(json: string): void {
+    if (json.length === 0) {
+      this.selectedRectsJson = '';
+      this.selectedRectPage = 0;
+      return;
+    }
+    try {
+      const dto = JSON.parse(json) as SelectionRectDto;
+      if (dto.rects.length > 0 && dto.page > 0) {
+        this.selectedRectsJson = JSON.stringify(dto.rects);
+        this.selectedRectPage = dto.page;
+      }
+    } catch (error) {
+      // ignore malformed geometry
+    }
+  }
+
+  // Push the drawable annotations (those with geometry) into the viewer to paint.
+  private syncAnnotationsToViewer(): void {
+    const payload: AnnotPayload[] = [];
+    this.annotations.forEach((item: PdfAnnotation) => {
+      const raw = item.rects ?? '';
+      if (raw.length === 0) {
+        return;
+      }
+      try {
+        const rects = JSON.parse(raw) as AnnotRect[];
+        if (rects.length > 0) {
+          payload.push({ id: item.id, page: item.page, kind: item.kind, rects });
+        }
+      } catch (error) {
+        // skip malformed geometry
+      }
+    });
+    const json = JSON.stringify(payload);
+    this.runViewer(`SciViewer.setAnnotations(${JSON.stringify(json)})`);
   }
 
   private useSelectionAsDraft(): void {
@@ -390,6 +473,14 @@ struct PDFReader {
     }
     this.noteDraft = text;
     this.statusText = '已引用选中文字';
+  }
+
+  private enterTextSelectionMode(): void {
+    this.sheetShown = false;
+    this.chromeShown = false;
+    this.textSelectionMode = true;
+    this.runViewer('SciViewer.setSelectionMode(true)');
+    this.statusText = '已进入选文模式：在 PDF 正文上长按并拖动选择文字';
   }
 
   private annotationsNote(): string {
@@ -511,8 +602,6 @@ struct PDFReader {
       .border({ width: this.sheetShown ? 1 : 0, color: this.readerBorderColor() })
       .borderRadius(this.sheetShown ? Radius.lg : 0);
 
-      // Chrome overlay; HitTestMode.Transparent lets touches in the empty middle
-      // reach the web below so continuous scrolling keeps working while it is shown.
       if (this.chromeShown) {
         this.readingChrome();
       }
@@ -530,7 +619,6 @@ struct PDFReader {
     }
     .width('100%')
     .height('100%')
-    .hitTestBehavior(HitTestMode.Transparent)
     .backgroundColor('#00000000');
   }
 
@@ -675,7 +763,7 @@ struct PDFReader {
       .javaScriptProxy({
         object: this.viewerBridge,
         name: 'scidailyNative',
-        methodList: ['onReady', 'onPageChange', 'onError', 'onTap', 'onOutline', 'onPageText', 'onSelection', 'onBoot'],
+        methodList: ['onReady', 'onPageChange', 'onError', 'onTap', 'onOutline', 'onPageText', 'onSelection', 'onSelectionRect', 'onBoot'],
         controller: this.controller
       })
       .onPageEnd(() => {
@@ -747,7 +835,7 @@ struct PDFReader {
   private outlinePanel(): void {
     Column({ space: Space.xs }) {
       Row() {
-        Text(this.pdfOutline.length > 0 ? '文献目录（来自 PDF 书签）' : '文献目录（参考结构）')
+        Text(this.pdfOutline.length > 0 ? '文献目录（自动识别章节）' : '文献目录（参考结构）')
           .fontSize(Font.caption)
           .fontColor(this.readerMutedColor());
         Blank();
@@ -826,6 +914,17 @@ struct PDFReader {
         .padding(Space.sm)
         .backgroundColor(this.readerPanelColor())
         .borderRadius(Radius.md);
+      } else {
+        Button('去 PDF 选文')
+          .height(40)
+          .width('100%')
+          .fontSize(Font.body)
+          .fontColor(AppColor.accent)
+          .backgroundColor(AppColor.accentSoft)
+          .borderRadius(Radius.lg)
+          .onClick(() => {
+            this.enterTextSelectionMode();
+          });
       }
       TextArea({ placeholder: '长按 PDF 选中文字后点“引用”，或直接手写批注', text: this.noteDraft })
         .height(64)
@@ -927,11 +1026,30 @@ struct PDFReader {
       }
       .width('100%');
       Scroll() {
-        Text(this.aiResult.length > 0 ? this.aiResult : '选择一个 AI 阅读动作后，结果会显示在这里。')
-          .fontSize(Font.small)
-          .fontColor(this.readerTextColor())
-          .lineHeight(20)
-          .width('100%');
+        Column({ space: Space.sm }) {
+          if (this.aiResult.length > 0) {
+            Row() {
+              Text(this.aiResult)
+                .fontSize(Font.small)
+                .fontColor(this.readerTextColor())
+                .lineHeight(22)
+                .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+                .backgroundColor(this.readerSurfaceColor())
+                .border({ width: 1, color: this.readerBorderColor() })
+                .borderRadius(Radius.lg)
+                .width('92%');
+              Blank();
+            }
+            .width('100%');
+          } else {
+            Text('选择一个 AI 阅读动作后，结果会显示在这里。')
+              .fontSize(Font.small)
+              .fontColor(this.readerMutedColor())
+              .lineHeight(20)
+              .width('100%');
+          }
+        }
+        .width('100%');
       }
       .height(142)
       .padding(Space.sm)

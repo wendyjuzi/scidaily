@@ -11,6 +11,7 @@
       height: 100%;
       background: #0b1220;
       -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: default;
       overscroll-behavior: none;
     }
     #viewer {
@@ -22,6 +23,10 @@
       background: #0b1220;
       padding: 10px 0 40px;
       box-sizing: border-box;
+    }
+    body.selection-mode,
+    body.selection-mode #viewer {
+      cursor: text;
     }
     /* night invert applied on the pages wrapper so the scrollbar stays normal */
     #pages.night canvas,
@@ -52,6 +57,11 @@
       width: 100%;
       height: 100%;
     }
+    body.selection-mode .page canvas {
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
     /* Selectable (invisible) text overlay aligned to the canvas. */
     .textLayer {
       position: absolute;
@@ -61,16 +71,40 @@
       text-size-adjust: none;
       forced-color-adjust: none;
       z-index: 2;
+      pointer-events: auto;
+      user-select: text;
+      -webkit-user-select: text;
+      touch-action: auto;
+    }
+    body.selection-mode .textLayer {
+      z-index: 4;
+      pointer-events: auto;
     }
     .textLayer span,
     .textLayer br {
-      color: transparent;
+      color: rgba(0, 0, 0, 0.01);
       position: absolute;
       white-space: pre;
       cursor: text;
       transform-origin: 0 0;
+      user-select: text;
+      -webkit-user-select: text;
     }
     .textLayer ::selection { background: rgba(45, 130, 255, 0.45); }
+    /* Annotation overlay: above the canvas image, below the (invisible) text layer,
+       so highlights are visible yet text stays selectable. Not affected by the
+       night-mode invert filter, so marks keep their real color in dark mode. */
+    .annotLayer {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+    }
+    .annotLayer .mark { position: absolute; }
+    .annotLayer .mark.hl { background: rgba(255, 211, 64, 0.40); border-radius: 2px; }
+    .annotLayer .mark.note { background: rgba(64, 156, 255, 0.28); border-radius: 2px; }
+    .annotLayer .mark.ul { border-bottom: 2px solid rgba(255, 120, 64, 0.92); }
+    .annotLayer .mark.box { border: 1.5px solid rgba(255, 90, 90, 0.95); border-radius: 3px; }
     #status {
       position: absolute;
       top: 50%;
@@ -119,7 +153,9 @@
         dpr: Math.max(1, Math.min(3, window.devicePixelRatio || 1)),
         observer: null,
         currentPage: 1,
-        loadToken: 0
+        loadToken: 0,
+        selectionMode: false,
+        annotations: []      // [{ id, page, kind, rects:[{x,y,w,h}] }] in normalized page coords
       };
 
       function notify(method, arg) {
@@ -194,12 +230,26 @@
           layer.style.setProperty('--scale-factor', String(cssVp.scale));
           el.appendChild(layer);
           try {
-            pdfjsLib.renderTextLayer({
-              textContent: textContent,
+            var params = {
+              textContentSource: textContent,
               container: layer,
               viewport: cssVp,
               textDivs: []
-            });
+            };
+            var rendered;
+            try {
+              rendered = pdfjsLib.renderTextLayer(params);
+            } catch (newApiError) {
+              params.textContent = textContent;
+              rendered = pdfjsLib.renderTextLayer(params);
+            }
+            if (rendered && rendered.promise) {
+              rendered.promise.then(function () {
+                notify('onTextLayerReady', el.getAttribute('data-index') || '0');
+              }).catch(function () { /* ignore */ });
+            } else {
+              notify('onTextLayerReady', el.getAttribute('data-index') || '0');
+            }
           } catch (e) { /* text layer unsupported; selection just won't work */ }
         }).catch(function () { /* ignore */ });
       }
@@ -227,12 +277,78 @@
           task.promise.then(function () {
             state.renderTasks[i] = null;
             buildTextLayer(page, cssVp, el);
+            drawAnnotations(i);
           }).catch(function () {
             state.renderTasks[i] = null;
           });
         }).catch(function () {
           state.rendered[i] = false;
         });
+      }
+
+      // ---- Annotation rendering (normalized [0,1] page coords -> pixel divs) ----
+      function ensureAnnotLayer(el) {
+        var layer = el.querySelector('.annotLayer');
+        if (!layer) {
+          layer = document.createElement('div');
+          layer.className = 'annotLayer';
+          el.appendChild(layer);
+        }
+        return layer;
+      }
+
+      function styleClassFor(kind) {
+        if (kind === '划线') return 'ul';
+        if (kind === '框选') return 'box';
+        if (kind === '批注') return 'note';
+        return 'hl'; // 高亮 and any default
+      }
+
+      function drawAnnotations(i) {
+        var el = state.pageEls[i];
+        if (!el) return;
+        var w = el.clientWidth, h = el.clientHeight;
+        if (!w || !h) return;
+        var layer = ensureAnnotLayer(el);
+        layer.innerHTML = '';
+        var pageNum = i + 1;
+        for (var a = 0; a < state.annotations.length; a++) {
+          var an = state.annotations[a];
+          if (!an || an.page !== pageNum || !an.rects || !an.rects.length) continue;
+          var cls = styleClassFor(an.kind);
+          if (cls === 'box') {
+            // a single bordered rectangle spanning the union of the selection rects
+            var minX = 1, minY = 1, maxX = 0, maxY = 0;
+            an.rects.forEach(function (r) {
+              minX = Math.min(minX, r.x); minY = Math.min(minY, r.y);
+              maxX = Math.max(maxX, r.x + r.w); maxY = Math.max(maxY, r.y + r.h);
+            });
+            var box = document.createElement('div');
+            box.className = 'mark box';
+            box.style.left = (minX * w) + 'px';
+            box.style.top = (minY * h) + 'px';
+            box.style.width = ((maxX - minX) * w) + 'px';
+            box.style.height = ((maxY - minY) * h) + 'px';
+            layer.appendChild(box);
+          } else {
+            for (var k = 0; k < an.rects.length; k++) {
+              var r = an.rects[k];
+              var m = document.createElement('div');
+              m.className = 'mark ' + cls;
+              m.style.left = (r.x * w) + 'px';
+              m.style.top = (r.y * h) + 'px';
+              m.style.width = (r.w * w) + 'px';
+              m.style.height = (r.h * h) + 'px';
+              layer.appendChild(m);
+            }
+          }
+        }
+      }
+
+      function redrawAllAnnotations() {
+        for (var i = 0; i < state.pageEls.length; i++) {
+          if (state.rendered[i]) drawAnnotations(i);
+        }
       }
 
       function setupObserver() {
@@ -296,10 +412,16 @@
       }
 
       // Extract the PDF's real bookmarks and map each to a 1-based page number.
+      // Many academic PDFs (e.g. arXiv) ship no bookmarks, so when that yields
+      // nothing usable we fall back to detecting section headings from the text.
       function emitOutline(doc, token) {
-        if (!doc || typeof doc.getOutline !== 'function') return;
+        if (!doc || typeof doc.getOutline !== 'function') {
+          buildHeuristicOutline(doc, token);
+          return;
+        }
         doc.getOutline().then(function (outline) {
-          if (!outline || !outline.length || token !== state.loadToken) return;
+          if (token !== state.loadToken) return;
+          if (!outline || !outline.length) { buildHeuristicOutline(doc, token); return; }
           var flat = [];
           (function walk(items, depth) {
             items.forEach(function (it) {
@@ -327,9 +449,111 @@
             var clean = flat
               .filter(function (e) { return e.title && e.page > 0; })
               .map(function (e) { return { title: e.title, page: e.page, depth: e.depth }; });
-            if (clean.length) notify('onOutline', JSON.stringify(clean));
+            if (clean.length) { notify('onOutline', JSON.stringify(clean)); }
+            else { buildHeuristicOutline(doc, token); }
           });
-        }).catch(function () { /* no outline */ });
+        }).catch(function () { buildHeuristicOutline(doc, token); });
+      }
+
+      // ---- Heuristic outline: detect headings from font size + section numbering ----
+      // Split a text row into segments so two-column layouts don't merge across the gutter.
+      function collectLines(tc, pageNum, out) {
+        var items = (tc.items || []).filter(function (it) { return it.str && it.str.trim(); });
+        var rows = {};
+        items.forEach(function (it) {
+          var tx = it.transform || [1, 0, 0, 1, 0, 0];
+          var y = Math.round(tx[5]);
+          (rows[y] = rows[y] || []).push({
+            str: it.str,
+            x: tx[4],
+            w: it.width || 0,
+            size: Math.hypot(tx[2], tx[3]) || Math.abs(tx[3]) || 0,
+            bold: /bold|black|semibold|heavy/i.test(it.fontName || '')
+          });
+        });
+        Object.keys(rows).forEach(function (k) {
+          var arr = rows[k].sort(function (a, b) { return a.x - b.x; });
+          var cur = null;
+          for (var i = 0; i < arr.length; i++) {
+            var it = arr[i];
+            if (cur && (it.x - cur.endX) > Math.max(24, cur.size * 2)) { out.push(cur); cur = null; }
+            if (!cur) cur = { text: '', size: 0, bold: false, page: pageNum, y: parseInt(k, 10), endX: it.x };
+            cur.text += it.str;
+            cur.endX = it.x + it.w;
+            if (it.size > cur.size) cur.size = it.size;
+            if (it.bold) cur.bold = true;
+          }
+          if (cur) out.push(cur);
+        });
+      }
+
+      var SECTION_RE = /^(\d+(?:\.\d+){0,3})[\.\)]?\s+\S/;
+      var KEYWORD_RE = /^(abstract|introduction|related works?|background|preliminaries|motivation|methods?|methodology|approach|model|framework|architecture|experiments?|experimental setup|evaluation|setup|datasets?|results?|main results|analysis|ablations?|discussion|conclusions?|future work|limitations?|broader impacts?|references|bibliography|acknowledge?ments?|appendix)\b/i;
+
+      function headingsFromLines(lines) {
+        if (!lines.length) return [];
+        // body font size = the size bucket that covers the most characters
+        var charBy = {};
+        lines.forEach(function (l) {
+          var s = String(Math.round(l.size * 2) / 2);
+          charBy[s] = (charBy[s] || 0) + l.text.length;
+        });
+        var body = 0, bestChars = -1;
+        Object.keys(charBy).forEach(function (s) {
+          if (charBy[s] > bestChars) { bestChars = charBy[s]; body = parseFloat(s); }
+        });
+        if (!body) body = 10;
+
+        var seen = {};
+        var picked = [];
+        lines.forEach(function (l) {
+          var t = l.text;
+          var words = t.split(' ').length;
+          if (t.length < 2 || t.length > 90 || words > 14) return;
+          var m = t.match(SECTION_RE);
+          var isSection = !!m;
+          var isKeyword = KEYWORD_RE.test(t);
+          var big = l.size >= body * 1.18;
+          var boldBig = l.bold && l.size >= body * 1.05;
+          if (!(isSection || isKeyword || big || boldBig)) return;
+          // drop body sentences and float captions that slipped through on size alone
+          if (!isSection && !isKeyword && /[.,;:]$/.test(t)) return;
+          if (/^(figure|fig\.?|table|algorithm|listing|eq\.?|equation)\b/i.test(t)) return;
+          var depth = (isSection && m[1].indexOf('.') >= 0) ? 1 : 0;
+          var key = l.page + '|' + t.toLowerCase();
+          if (seen[key]) return;
+          seen[key] = true;
+          picked.push({ title: t, page: l.page, depth: depth, y: l.y });
+        });
+        // document order: page ascending, then top-of-page first (PDF y grows upward)
+        picked.sort(function (a, b) { return (a.page - b.page) || (b.y - a.y); });
+        return picked.slice(0, 80).map(function (e) {
+          return { title: e.title, page: e.page, depth: e.depth };
+        });
+      }
+
+      function buildHeuristicOutline(doc, token) {
+        if (!doc || token !== state.loadToken) return;
+        var maxPages = Math.min(doc.numPages, 60);
+        var lines = [];
+        var chain = Promise.resolve();
+        for (var p = 1; p <= maxPages; p++) {
+          (function (pageNum) {
+            chain = chain.then(function () {
+              if (token !== state.loadToken) return;
+              return doc.getPage(pageNum).then(function (page) {
+                return page.getTextContent();
+              }).then(function (tc) {
+                collectLines(tc, pageNum, lines);
+              }).catch(function () { /* skip unreadable page */ });
+            });
+          })(p);
+        }
+        chain.then(function () {
+          if (token !== state.loadToken) return;
+          var outline = headingsFromLines(lines);
+          if (outline.length) notify('onOutline', JSON.stringify(outline));
+        });
       }
 
       // ---- Public API (called from ArkTS via runJavaScript) ----
@@ -393,6 +617,15 @@
 
         goToPage: function (n, smooth) { scrollToPage(n, smooth !== false); },
 
+        setSelectionMode: function (enabled) {
+          state.selectionMode = !!enabled;
+          if (state.selectionMode) {
+            document.body.classList.add('selection-mode');
+          } else {
+            document.body.classList.remove('selection-mode');
+          }
+        },
+
         setScale: function (mode) {
           if (mode === 'width' || mode === 'page') {
             state.scaleMode = mode;
@@ -438,6 +671,18 @@
           var vp1 = state.baseViewports[i];
           if (!vp1) return 100;
           return Math.round(effectiveScaleFor(i) / fitWidthScale(vp1) * 100);
+        },
+
+        // Replace the full annotation set and repaint visible pages.
+        setAnnotations: function (json) {
+          try { state.annotations = json ? JSON.parse(json) : []; }
+          catch (e) { state.annotations = []; }
+          redrawAllAnnotations();
+        },
+
+        // Drop the blue text selection so a freshly drawn mark is the only highlight.
+        clearSelection: function () {
+          try { var s = window.getSelection(); if (s) s.removeAllRanges(); } catch (e) {}
         }
       };
 
@@ -457,9 +702,54 @@
         if (text.length > 2000) { text = text.substring(0, 2000); }
         notify('onSelection', text);
       }
+      // Which page contains a given viewport point (for mapping selection rects).
+      function pageIndexAtClient(cx, cy) {
+        for (var i = 0; i < state.pageEls.length; i++) {
+          var pr = state.pageEls[i].getBoundingClientRect();
+          if (cy >= pr.top && cy <= pr.bottom && cx >= pr.left - 4 && cx <= pr.right + 4) return i;
+        }
+        return -1;
+      }
+
+      // Report the geometry of the current selection as normalized page rects, so
+      // ArkTS can attach them to a 标注 and have us paint a highlight/underline/box.
+      function reportSelectionRect() {
+        var sel = window.getSelection ? window.getSelection() : null;
+        if (!sel || sel.rangeCount === 0 || sel.isCollapsed) { notify('onSelectionRect', ''); return; }
+        var range = sel.getRangeAt(0);
+        var list = range.getClientRects();
+        if (!list || !list.length) { notify('onSelectionRect', ''); return; }
+        var groups = {};
+        for (var r = 0; r < list.length; r++) {
+          var cr = list[r];
+          if (cr.width < 1 || cr.height < 1) continue;
+          var i = pageIndexAtClient(cr.left + cr.width / 2, cr.top + cr.height / 2);
+          if (i < 0) continue;
+          var pr = state.pageEls[i].getBoundingClientRect();
+          if (!pr.width || !pr.height) continue;
+          (groups[i] = groups[i] || []).push({
+            x: (cr.left - pr.left) / pr.width,
+            y: (cr.top - pr.top) / pr.height,
+            w: cr.width / pr.width,
+            h: cr.height / pr.height
+          });
+        }
+        // A single annotation lives on one page; pick the page holding the most rects.
+        var bestI = -1, bestN = 0;
+        Object.keys(groups).forEach(function (k) {
+          if (groups[k].length > bestN) { bestN = groups[k].length; bestI = parseInt(k, 10); }
+        });
+        if (bestI < 0) { notify('onSelectionRect', ''); return; }
+        notify('onSelectionRect', JSON.stringify({ page: bestI + 1, rects: groups[bestI] }));
+      }
+
       document.addEventListener('selectionchange', function () {
         if (selTimer) return;
-        selTimer = setTimeout(function () { selTimer = null; reportSelection(); }, 250);
+        selTimer = setTimeout(function () {
+          selTimer = null;
+          reportSelection();
+          reportSelectionRect();
+        }, 250);
       });
 
       // Distinguish a tap (toggle reader chrome) from a scroll/drag gesture.
@@ -478,8 +768,20 @@
         var dy = Math.abs(ch.clientY - touchOrigin.y);
         var dt = Date.now() - touchOrigin.t;
         touchOrigin = null;
+        if (state.selectionMode) return;
+        var selected = window.getSelection ? String(window.getSelection().toString()).trim() : '';
+        if (selected.length > 0) return;
         if (dx < 12 && dy < 12 && dt < 300) {
           notify('onTap', 1);
+        }
+      }, { passive: true });
+
+      viewerEl.addEventListener('mousedown', function (e) {
+        if (!state.selectionMode) return;
+        if (e.button !== 0) return;
+        var sel = window.getSelection ? window.getSelection() : null;
+        if (sel && !sel.isCollapsed) {
+          try { sel.removeAllRanges(); } catch (err) {}
         }
       }, { passive: true });
 
