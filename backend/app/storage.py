@@ -216,6 +216,17 @@ class AppStore:
                 FOREIGN KEY(session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS agent_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                memory_type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS topic_categories (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
@@ -797,6 +808,20 @@ class AppStore:
             raise ValueError("Discussion session not found")
         return self._agent_session_from_row(row)
 
+    def get_agent_session_for_system(self, session_id: str) -> AgentSession:
+        with self._lock:
+            row = self.conn.execute(
+                """
+                SELECT *
+                FROM agent_sessions
+                WHERE id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            raise ValueError("Discussion session not found")
+        return self._agent_session_from_row(row)
+
     def list_agent_sessions(self, user_id: int) -> List[AgentSession]:
         with self._lock:
             rows = self.conn.execute(
@@ -823,11 +848,7 @@ class AppStore:
                 FROM agent_messages
                 WHERE session_id = ?
                 ORDER BY
-                    CASE
-                        WHEN role = 'user' THEN 0
-                        WHEN status IN ('done', 'error', 'timeout') THEN 1
-                        ELSE 2
-                    END ASC,
+                    round ASC,
                     CASE
                         WHEN role = 'user' THEN created_at
                         WHEN status IN ('done', 'error', 'timeout') THEN COALESCE(completed_at, created_at)
@@ -839,6 +860,40 @@ class AppStore:
             ).fetchall()
         return [self._agent_message_from_row(row) for row in rows]
 
+    def append_agent_user_message(self, user_id: int, session_id: str, content: str) -> AgentMessage:
+        text = content.strip()
+        if not text:
+            raise ValueError("Discussion input is required")
+        if len(text) > 8000:
+            raise ValueError("Discussion input is too long")
+        session = self.get_agent_session(user_id, session_id)
+        if self.has_unfinished_agent_messages(session_id):
+            raise ValueError("Discussion is still running")
+        next_round = max(1, session.current_round + 1)
+        next_version = max(1, session.memory_version + 1)
+        created_at = now_text()
+        with self._lock:
+            cursor = self.conn.execute(
+                """
+                INSERT INTO agent_messages (
+                    session_id, agent_key, agent_name, role, content, status, round,
+                    context_version_started, created_at, started_at, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (session_id, "user", "我", "user", text, "done", next_round, next_version, created_at, created_at, created_at),
+            )
+            self.conn.execute(
+                """
+                UPDATE agent_sessions
+                SET status = ?, current_round = ?, memory_version = ?, updated_at = ?
+                WHERE id = ? AND user_id = ?
+                """,
+                ("running", next_round, next_version, created_at, session_id, user_id),
+            )
+            self.conn.commit()
+            message_id = int(cursor.lastrowid)
+        return self.get_agent_message(message_id)
+
     def create_agent_message(
         self,
         session_id: str,
@@ -849,9 +904,21 @@ class AppStore:
         context_version: int,
         content: str = "",
         status: str = "pending",
+        expected_memory_version: Optional[int] = None,
     ) -> AgentMessage:
         created_at = now_text()
         with self._lock:
+            if expected_memory_version is not None:
+                session_row = self.conn.execute(
+                    "SELECT status, memory_version FROM agent_sessions WHERE id = ?",
+                    (session_id,),
+                ).fetchone()
+                if (
+                    session_row is None
+                    or session_row["status"] != "running"
+                    or int(session_row["memory_version"]) != expected_memory_version
+                ):
+                    raise ValueError("Discussion generation has stopped")
             cursor = self.conn.execute(
                 """
                 INSERT INTO agent_messages (
@@ -892,7 +959,7 @@ class AppStore:
                 """
                 UPDATE agent_messages
                 SET status = ?, started_at = ?
-                WHERE id = ?
+                WHERE id = ? AND status = 'pending'
                 """,
                 ("running", started_at, message_id),
             )
@@ -906,31 +973,124 @@ class AppStore:
                 """
                 UPDATE agent_messages
                 SET status = ?, content = ?, completed_at = ?
-                WHERE id = ?
+                WHERE id = ? AND status IN ('pending', 'running')
                 """,
                 (status, content.strip(), completed_at, message_id),
             )
             self.conn.commit()
         return self.get_agent_message(message_id)
 
-    def mark_unfinished_agent_messages(self, session_id: str, role_keys: List[str], status: str = "timeout") -> None:
+    def create_agent_memory(
+        self,
+        session_id: str,
+        memory_type: str,
+        content: str,
+        created_by: str,
+        version: int,
+    ) -> str:
+        created_at = now_text()
+        with self._lock:
+            self.conn.execute(
+                """
+                INSERT INTO agent_memory (
+                    session_id, memory_type, content, created_by, version, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (session_id, memory_type, content, created_by, version, created_at),
+            )
+            self.conn.commit()
+        return content
+
+    def get_agent_memory(self, session_id: str, memory_type: str, version: int) -> str:
+        with self._lock:
+            row = self.conn.execute(
+                """
+                SELECT content
+                FROM agent_memory
+                WHERE session_id = ? AND memory_type = ? AND version = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (session_id, memory_type, version),
+            ).fetchone()
+        if row is None:
+            return ""
+        return row["content"]
+
+    def snapshot_agent_context(self, session_id: str, version: int, max_round: int, created_by: str) -> str:
+        existing = self.get_agent_memory(session_id, "context", version)
+        if existing:
+            return existing
+        messages = self.list_agent_messages_for_session(session_id)
+        lines: List[str] = []
+        for item in messages:
+            if item.role == "user":
+                lines.append(f"用户（第 {item.round} 轮）：\n{item.content}")
+                continue
+            if item.role in ["assistant", "agent", "coordinator"] and item.status == "done" and item.round <= max_round:
+                lines.append(f"{item.agent_name}（第 {item.round} 轮）：\n{item.content}")
+        history = "\n\n".join(lines).strip()
+        if history:
+            content = f"本次组会到当前为止的完整记录：\n{history}"
+        else:
+            content = "本次组会到当前为止的完整记录：暂无。"
+        return self.create_agent_memory(session_id, "context", content, created_by, version)
+
+    def mark_unfinished_agent_messages(
+        self,
+        session_id: str,
+        role_keys: List[str],
+        status: str = "timeout",
+        context_version: Optional[int] = None,
+    ) -> None:
         if not role_keys:
             return
         completed_at = now_text()
         placeholders = ",".join("?" for _ in role_keys)
+        context_clause = ""
+        params: List[object] = [status, completed_at, session_id] + role_keys
+        if context_version is not None:
+            context_clause = "AND context_version_started = ?"
+            params.append(context_version)
         with self._lock:
             self.conn.execute(
                 f"""
                 UPDATE agent_messages
                 SET status = ?, completed_at = ?
                 WHERE session_id = ?
-                  AND role = 'assistant'
+                  AND role IN ('assistant', 'agent', 'coordinator')
                   AND status IN ('pending', 'running')
                   AND agent_key IN ({placeholders})
+                  {context_clause}
                 """,
-                [status, completed_at, session_id] + role_keys,
+                params,
             )
             self.conn.commit()
+
+    def stop_agent_session(self, user_id: int, session_id: str) -> AgentSession:
+        self.get_agent_session(user_id, session_id)
+        completed_at = now_text()
+        with self._lock:
+            self.conn.execute(
+                """
+                UPDATE agent_messages
+                SET status = ?, completed_at = ?
+                WHERE session_id = ?
+                  AND role IN ('assistant', 'agent', 'coordinator')
+                  AND status IN ('pending', 'running')
+                """,
+                ("timeout", completed_at, session_id),
+            )
+            self.conn.execute(
+                """
+                UPDATE agent_sessions
+                SET status = ?, updated_at = ?
+                WHERE id = ? AND user_id = ?
+                """,
+                ("partial", completed_at, session_id, user_id),
+            )
+            self.conn.commit()
+        return self.get_agent_session(user_id, session_id)
 
     def has_unfinished_agent_messages(self, session_id: str) -> bool:
         with self._lock:
@@ -939,7 +1099,7 @@ class AppStore:
                 SELECT COUNT(*) AS total
                 FROM agent_messages
                 WHERE session_id = ?
-                  AND role = 'assistant'
+                  AND role IN ('assistant', 'agent', 'coordinator')
                   AND status IN ('pending', 'running')
                 """,
                 (session_id,),
@@ -952,7 +1112,9 @@ class AppStore:
         status: str,
         current_round: Optional[int] = None,
         memory_version: Optional[int] = None,
-    ) -> None:
+        expected_memory_version: Optional[int] = None,
+        expected_status: Optional[str] = None,
+    ) -> bool:
         assignments = ["status = ?", "updated_at = ?"]
         values: List[object] = [status, now_text()]
         if current_round is not None:
@@ -961,13 +1123,21 @@ class AppStore:
         if memory_version is not None:
             assignments.append("memory_version = ?")
             values.append(memory_version)
+        where_parts = ["id = ?"]
         values.append(session_id)
+        if expected_memory_version is not None:
+            where_parts.append("memory_version = ?")
+            values.append(expected_memory_version)
+        if expected_status is not None:
+            where_parts.append("status = ?")
+            values.append(expected_status)
         with self._lock:
-            self.conn.execute(
-                f"UPDATE agent_sessions SET {', '.join(assignments)} WHERE id = ?",
+            cursor = self.conn.execute(
+                f"UPDATE agent_sessions SET {', '.join(assignments)} WHERE {' AND '.join(where_parts)}",
                 values,
             )
             self.conn.commit()
+        return cursor.rowcount > 0
 
     def completed_agent_role_names(self, session_id: str, max_round: int) -> List[str]:
         with self._lock:
@@ -975,7 +1145,7 @@ class AppStore:
                 """
                 SELECT DISTINCT agent_name
                 FROM agent_messages
-                WHERE session_id = ? AND round <= ? AND role = 'assistant' AND status = 'done'
+                WHERE session_id = ? AND round <= ? AND role IN ('assistant', 'agent', 'coordinator') AND status = 'done'
                 ORDER BY id ASC
                 """,
                 (session_id, max_round),

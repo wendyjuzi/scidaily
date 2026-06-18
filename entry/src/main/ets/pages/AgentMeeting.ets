@@ -51,6 +51,10 @@ struct AgentMeeting {
     if (this.loading) {
       return;
     }
+    if (this.currentSession !== undefined) {
+      this.continueMeeting((this.currentSession as AgentMeetingSession).id, text);
+      return;
+    }
     this.loading = true;
     this.statusText = '正在拉起多角色组会...';
     agentMeetingService.create(text, this.meetingTitle(text)).then((session: AgentMeetingSession) => {
@@ -62,6 +66,42 @@ struct AgentMeeting {
       this.startPolling(session.id);
     }).catch((error: Error) => {
       this.statusText = error.message.length > 0 ? error.message : '组会创建失败，请检查后端。';
+    }).finally(() => {
+      this.loading = false;
+    });
+  }
+
+  private continueMeeting(sessionId: string, text: string): void {
+    this.loading = true;
+    this.statusText = '正在把追问加入本次组会...';
+    agentMeetingService.continueSession(sessionId, text).then((session: AgentMeetingSession) => {
+      this.currentSession = session;
+      this.prompt = '';
+      this.statusText = '追问已加入，新的意见会继续出现在当前组会里。';
+      this.loadSessions();
+      this.startPolling(session.id);
+    }).catch((error: Error) => {
+      this.statusText = error.message.length > 0 ? error.message : '追问发送失败，请稍后重试。';
+    }).finally(() => {
+      this.loading = false;
+    });
+  }
+
+  private stopCurrentGeneration(): void {
+    if (this.currentSession === undefined || this.loading) {
+      return;
+    }
+    const sessionId = (this.currentSession as AgentMeetingSession).id;
+    this.loading = true;
+    this.statusText = '正在停止当前输出...';
+    agentMeetingService.stop(sessionId).then((session: AgentMeetingSession) => {
+      this.pollToken += 1;
+      this.polling = false;
+      this.currentSession = session;
+      this.statusText = '已停止当前输出，可以继续追问。';
+      this.fetchMessages(session.id, this.pollToken);
+    }).catch((error: Error) => {
+      this.statusText = error.message.length > 0 ? error.message : '停止失败，请稍后重试。';
     }).finally(() => {
       this.loading = false;
     });
@@ -92,7 +132,13 @@ struct AgentMeeting {
       this.messages = bundle.messages;
       if (this.isSessionFinished(bundle.session.status)) {
         this.polling = false;
-        this.statusText = bundle.session.status === 'completed' ? '本次组会已整理完成。' : '本次组会已有阶段性结论。';
+        if (bundle.session.status === 'completed') {
+          this.statusText = '本次组会已整理完成，可以继续追问。';
+        } else if (bundle.session.status === 'partial') {
+          this.statusText = '当前输出已收住，已有内容会保留，可以继续追问。';
+        } else {
+          this.statusText = '本次组会暂未整理完成，可以稍后重试或继续追问。';
+        }
         this.loadSessions();
         return;
       }
@@ -121,6 +167,14 @@ struct AgentMeeting {
     this.prompt = text;
   }
 
+  private newDiscussion(): void {
+    this.pollToken += 1;
+    this.polling = false;
+    this.currentSession = undefined;
+    this.messages = [];
+    this.statusText = '已切换到新讨论。';
+  }
+
   private statusLabel(status: string): string {
     if (status === 'completed') {
       return '已完成';
@@ -136,18 +190,18 @@ struct AgentMeeting {
 
   private messageSubline(message: AgentMeetingMessage): string {
     if (message.role === 'user') {
-      return '发起问题';
+      return message.round <= 0 ? '发起问题' : '继续追问';
     }
-    if (message.round === 1) {
-      return '基于初始问题';
-    }
-    if (message.round === 2) {
-      return '已参考前一轮意见';
-    }
-    if (message.round >= 3) {
+    if (message.role === 'coordinator' || message.agentName.indexOf('主持') >= 0) {
       return '综合已完成意见';
     }
-    return '正在整理';
+    if (message.agentName.indexOf('补充') >= 0 || message.agentName.indexOf('写作') >= 0) {
+      return '已参考前一轮意见';
+    }
+    if (message.contextVersionStarted > 1) {
+      return '已参考前一轮意见';
+    }
+    return '同轮独立判断';
   }
 
   private visibleMessages(): AgentMeetingMessage[] {
@@ -166,11 +220,15 @@ struct AgentMeeting {
     return message.role === 'user';
   }
 
+  private isAssistantRole(role: string): boolean {
+    return role === 'assistant' || role === 'agent' || role === 'coordinator';
+  }
+
   private activeNames(): string {
     const names: string[] = [];
     this.messages.forEach((item: AgentMeetingMessage) => {
       if (
-        item.role === 'assistant' &&
+        this.isAssistantRole(item.role) &&
         (item.status === 'pending' || item.status === 'running') &&
         names.indexOf(item.agentName) < 0
       ) {
@@ -232,7 +290,12 @@ struct AgentMeeting {
         .fontColor(AppColor.accentStrong)
         .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
         .backgroundColor(AppColor.accentSoft)
-        .borderRadius(Radius.pill);
+        .borderRadius(Radius.pill)
+        .onClick(() => {
+          if (this.currentSession !== undefined) {
+            this.newDiscussion();
+          }
+        });
     }
     .width('100%')
     .padding({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.sm })
@@ -467,17 +530,21 @@ struct AgentMeeting {
         .onChange((value: string) => {
           this.prompt = value;
         });
-      Text(this.loading ? '启动中' : '发起')
+      Text(this.loading ? '处理中' : (this.polling ? '停止' : (this.currentSession === undefined ? '发起' : '追问')))
         .fontSize(Font.body)
         .fontWeight(FontWeight.Bold)
         .fontColor(AppColor.textOnPrimary)
         .width(72)
         .height(48)
         .textAlign(TextAlign.Center)
-        .backgroundColor(this.loading ? AppColor.textMuted : AppColor.primary)
+        .backgroundColor(this.loading ? AppColor.textMuted : (this.polling ? AppColor.danger : AppColor.primary))
         .borderRadius(Radius.lg)
         .onClick(() => {
-          this.startMeeting();
+          if (this.polling) {
+            this.stopCurrentGeneration();
+          } else {
+            this.startMeeting();
+          }
         });
     }
     .width('100%')

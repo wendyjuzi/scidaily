@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from app.schemas import AgentSession
 from app.services.ai_service import AiProviderError, call_chat_completions, load_ai_config
@@ -108,37 +108,64 @@ class AgentCoordinator:
     def start_session(self, session: AgentSession) -> None:
         self.executor.submit(self._run_session, session.id)
 
+    def continue_session(self, session_id: str) -> None:
+        self.executor.submit(self._run_followup, session_id)
+
     def _run_session(self, session_id: str) -> None:
         try:
-            self.store.update_agent_session_status(session_id, "running", current_round=1, memory_version=1)
+            if not self.store.update_agent_session_status(
+                session_id,
+                "running",
+                current_round=1,
+                memory_version=1,
+                expected_status="running",
+            ):
+                return
+            round_one_context = self._snapshot_context(session_id, version=1, max_round=0, created_by="round_one")
             round_one_futures = []
             for role in ROUND_ONE_ROLES:
-                future = self.executor.submit(self._run_role, session_id, role, self._build_context(session_id, role))
+                future = self.executor.submit(self._run_role, session_id, role, round_one_context, 1)
                 future.research_role = role
                 round_one_futures.append(future)
             done, not_done = wait(round_one_futures, timeout=90)
-            self._mark_unfinished(session_id, not_done)
+            self._mark_unfinished(session_id, not_done, 1)
 
-            self.store.update_agent_session_status(session_id, "running", current_round=2, memory_version=2)
+            if not self.store.update_agent_session_status(
+                session_id,
+                "running",
+                current_round=2,
+                memory_version=2,
+                expected_memory_version=1,
+                expected_status="running",
+            ):
+                return
+            round_two_context = self._snapshot_context(session_id, version=2, max_round=1, created_by="round_two")
             round_two_futures = []
             for role in ROUND_TWO_ROLES:
-                future = self.executor.submit(self._run_role, session_id, role, self._build_context(session_id, role))
+                future = self.executor.submit(self._run_role, session_id, role, round_two_context, 2)
                 future.research_role = role
                 round_two_futures.append(future)
             done_two, not_done_two = wait(round_two_futures, timeout=90)
-            self._mark_unfinished(session_id, not_done_two)
+            self._mark_unfinished(session_id, not_done_two, 2)
 
-            self.store.update_agent_session_status(session_id, "running", current_round=3, memory_version=3)
-            self._run_role(session_id, COORDINATOR_ROLE, self._build_context(session_id, COORDINATOR_ROLE))
-
-            messages = self.store.list_agent_messages_for_session(session_id)
-            failed = [item for item in messages if item.status in ["timeout", "error"] and item.role == "assistant"]
-            unfinished = [item for item in messages if item.status in ["pending", "running"] and item.role == "assistant"]
-            self.store.update_agent_session_status(
+            if not self.store.update_agent_session_status(
                 session_id,
-                "partial" if failed or unfinished else "completed",
+                "running",
+                current_round=3,
+                memory_version=3,
+                expected_memory_version=2,
+                expected_status="running",
+            ):
+                return
+            round_three_context = self._snapshot_context(session_id, version=3, max_round=2, created_by="coordinator")
+            self._run_role(session_id, COORDINATOR_ROLE, round_three_context, 3)
+
+            self._finish_session(
+                session_id,
                 current_round=3,
                 memory_version=4,
+                expected_memory_version=3,
+                min_context_version=1,
             )
         except Exception as exc:
             self.store.create_agent_message(
@@ -153,27 +180,132 @@ class AgentCoordinator:
             )
             self.store.update_agent_session_status(session_id, "failed", current_round=3)
 
-    def _run_role(self, session_id: str, role: ResearchRole, context: str) -> None:
-        message = self.store.create_agent_message(
-            session_id=session_id,
-            agent_key=role.key,
-            agent_name=role.name,
-            role="assistant",
-            round_number=role.round_number,
-            context_version=role.round_number,
-            content="",
-            status="pending",
+    def _run_followup(self, session_id: str) -> None:
+        try:
+            session = self.store.get_agent_session_for_system(session_id)
+            start_round = max(1, session.current_round)
+            base_version = max(1, session.memory_version)
+            if not self.store.update_agent_session_status(
+                session_id,
+                "running",
+                current_round=start_round,
+                memory_version=base_version,
+                expected_memory_version=base_version,
+                expected_status="running",
+            ):
+                return
+            followup_context = self._snapshot_context(
+                session_id,
+                version=base_version,
+                max_round=start_round,
+                created_by="followup",
+            )
+            futures = []
+            for role in ROUND_ONE_ROLES:
+                future = self.executor.submit(self._run_role, session_id, role, followup_context, base_version, start_round)
+                future.research_role = role
+                futures.append(future)
+            done, not_done = wait(futures, timeout=90)
+            self._mark_unfinished(session_id, not_done, base_version)
+
+            summary_version = base_version + 1
+            summary_round = start_round + 1
+            if not self.store.update_agent_session_status(
+                session_id,
+                "running",
+                current_round=summary_round,
+                memory_version=summary_version,
+                expected_memory_version=base_version,
+                expected_status="running",
+            ):
+                return
+            summary_context = self._snapshot_context(
+                session_id,
+                version=summary_version,
+                max_round=summary_round,
+                created_by="followup_summary",
+            )
+            self._run_role(session_id, COORDINATOR_ROLE, summary_context, summary_version, summary_round)
+            self._finish_session(
+                session_id,
+                summary_round,
+                summary_version + 1,
+                expected_memory_version=summary_version,
+                min_context_version=base_version,
+            )
+        except Exception as exc:
+            self.store.create_agent_message(
+                session_id=session_id,
+                agent_key="system",
+                agent_name="系统提示",
+                role="system",
+                round_number=0,
+                context_version=0,
+                content=f"本次追问整理时遇到问题：{exc}",
+                status="error",
+            )
+            self.store.update_agent_session_status(session_id, "failed")
+
+    def _finish_session(
+        self,
+        session_id: str,
+        current_round: int,
+        memory_version: int,
+        expected_memory_version: Optional[int],
+        min_context_version: int,
+    ) -> None:
+        messages = self.store.list_agent_messages_for_session(session_id)
+        failed = [
+            item for item in messages
+            if item.status in ["timeout", "error"] and item.role in ["assistant", "agent", "coordinator"]
+            and item.context_version_started >= min_context_version
+        ]
+        unfinished = [
+            item for item in messages
+            if item.status in ["pending", "running"] and item.role in ["assistant", "agent", "coordinator"]
+            and item.context_version_started >= min_context_version
+        ]
+        self.store.update_agent_session_status(
+            session_id,
+            "partial" if failed or unfinished else "completed",
+            current_round=current_round,
+            memory_version=memory_version,
+            expected_memory_version=expected_memory_version,
         )
+
+    def _run_role(
+        self,
+        session_id: str,
+        role: ResearchRole,
+        context: str,
+        context_version: int,
+        round_number: Optional[int] = None,
+    ) -> None:
+        message_round = round_number if round_number is not None else role.round_number
+        try:
+            message = self.store.create_agent_message(
+                session_id=session_id,
+                agent_key=role.key,
+                agent_name=role.name,
+                role="coordinator" if role.key == "coordinator" else "agent",
+                round_number=message_round,
+                context_version=context_version,
+                content="",
+                status="pending",
+                expected_memory_version=context_version,
+            )
+        except ValueError:
+            return
         self.store.mark_agent_message_running(message.id)
         try:
-            answer = self._ask_role(role, context)
+            answer = self._ask_role(role, self._build_context(context, role, context_version), context_version)
             self.store.complete_agent_message(message.id, answer, "done")
         except AiProviderError as exc:
             self.store.complete_agent_message(message.id, self._friendly_failure(role, str(exc)), "error")
         except Exception as exc:
             self.store.complete_agent_message(message.id, self._friendly_failure(role, str(exc)), "error")
 
-    def _mark_unfinished(self, session_id: str, futures) -> None:
+    def _mark_unfinished(self, session_id: str, futures, context_version: int) -> None:
         role_keys: List[str] = []
         for future in futures:
             if future.done():
@@ -181,13 +313,18 @@ class AgentCoordinator:
             role = getattr(future, "research_role", None)
             if isinstance(role, ResearchRole):
                 role_keys.append(role.key)
-            # The running request cannot be forcibly stopped safely, but the session moves on.
-            # When it eventually returns it will still be appended as a late message.
+            # The running HTTP request cannot be forcibly stopped safely, but late writes are ignored.
             time.sleep(0)
-        self.store.mark_unfinished_agent_messages(session_id, role_keys)
+        self.store.mark_unfinished_agent_messages(session_id, role_keys, context_version=context_version)
 
-    def _ask_role(self, role: ResearchRole, context: str) -> str:
+    def _ask_role(self, role: ResearchRole, context: str, context_version: int) -> str:
         cfg = load_ai_config()
+        length_rule = (
+            "请精确简洁：总字数控制在 180 到 280 字，最多 4 个短段落或 4 条要点。"
+            if role.key == "coordinator"
+            else "请精确简洁：总字数控制在 120 到 220 字，最多 3 条要点。"
+        )
+        context_note = role.context_note if context_version <= 1 else "已参考本次组会前文和最新追问"
         payload = {
             "model": cfg.model,
             "messages": [
@@ -195,8 +332,9 @@ class AgentCoordinator:
                     "role": "system",
                     "content": (
                         f"{role.system_prompt}\n"
-                        f"当前发言位置：{role.context_note}。\n"
-                        "请控制在 300 到 700 字之间，使用短段落和清晰小标题。"
+                        f"当前发言位置：{context_note}。\n"
+                        f"{length_rule}"
+                        "直接给可执行判断，不写客套话，不复述用户问题，不展开背景科普。"
                     ),
                 },
                 {
@@ -208,25 +346,22 @@ class AgentCoordinator:
         }
         return call_chat_completions(cfg, payload)
 
-    def _build_context(self, session_id: str, role: ResearchRole) -> str:
-        messages = self.store.list_agent_messages_for_session(session_id)
-        user_input = ""
-        completed_lines: List[str] = []
-        for item in messages:
-            if item.role == "user":
-                user_input = item.content
-                continue
-            if item.role == "assistant" and item.status == "done":
-                completed_lines.append(f"{item.agent_name}（第 {item.round} 轮）：\n{item.content}")
-        if role.round_number <= 1:
+    def _snapshot_context(self, session_id: str, version: int, max_round: int, created_by: str) -> str:
+        return self.store.snapshot_agent_context(session_id, version, max_round, created_by)
+
+    def _build_context(self, base_context: str, role: ResearchRole, context_version: int) -> str:
+        if role.round_number <= 1 and context_version <= 1:
             return (
-                f"用户想讨论的问题：\n{user_input}\n\n"
+                f"{base_context}\n\n"
                 "请先给出你的独立判断，不需要等待其他角色。"
             )
-        previous = "\n\n".join(completed_lines) if completed_lines else "前一轮意见还在整理中。"
+        if role.key != "coordinator" and context_version > 1:
+            return (
+                f"{base_context}\n\n"
+                "请在前文基础上回应用户最新追问，优先补充新增判断，避免重复已经说过的内容。"
+            )
         return (
-            f"用户想讨论的问题：\n{user_input}\n\n"
-            f"目前已经完成的组会意见：\n{previous}\n\n"
+            f"{base_context}\n\n"
             f"请以“{role.context_note}”为前提继续补充。"
         )
 

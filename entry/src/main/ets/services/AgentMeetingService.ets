@@ -53,6 +53,10 @@ interface AgentSessionCreateDto {
   title: string;
 }
 
+interface AgentSessionContinueDto {
+  prompt: string;
+}
+
 class AgentMeetingService {
   async create(prompt: string, title: string = '', sourceType: string = '', sourceId: string = ''): Promise<AgentMeetingSession> {
     this.ensureLoggedIn();
@@ -67,6 +71,32 @@ class AgentMeetingService {
       method: http.RequestMethod.POST,
       token: authService.getToken(),
       body: JSON.stringify(payload),
+      timeoutMs: 12000
+    });
+    return this.sessionFromDto((JSON.parse(response) as AgentSessionResponseDto).item);
+  }
+
+  async continueSession(sessionId: string, prompt: string): Promise<AgentMeetingSession> {
+    this.ensureLoggedIn();
+    const payload: AgentSessionContinueDto = {
+      prompt
+    };
+    const response = await httpClient.request({
+      path: `/agent-sessions/${sessionId}/messages`,
+      method: http.RequestMethod.POST,
+      token: authService.getToken(),
+      body: JSON.stringify(payload),
+      timeoutMs: 12000
+    });
+    return this.sessionFromDto((JSON.parse(response) as AgentSessionResponseDto).item);
+  }
+
+  async stop(sessionId: string): Promise<AgentMeetingSession> {
+    this.ensureLoggedIn();
+    const response = await httpClient.request({
+      path: `/agent-sessions/${sessionId}/stop`,
+      method: http.RequestMethod.POST,
+      token: authService.getToken(),
       timeoutMs: 12000
     });
     return this.sessionFromDto((JSON.parse(response) as AgentSessionResponseDto).item);

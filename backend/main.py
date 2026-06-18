@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from app.dependencies import get_current_user
 from app.schemas import (
     AgentMessageListResponse,
+    AgentSessionContinueRequest,
     AgentSessionCreateRequest,
     AgentSessionListResponse,
     AgentSessionResponse,
@@ -226,6 +227,33 @@ def create_agent_session(
 @app.get("/api/v1/agent-sessions", response_model=AgentSessionListResponse)
 def list_agent_sessions(current_user: UserProfile = Depends(get_current_user)):
     return AgentSessionListResponse(items=store.list_agent_sessions(current_user.id))
+
+
+@app.post("/api/v1/agent-sessions/{session_id}/messages", response_model=AgentSessionResponse)
+def continue_agent_session(
+    session_id: str,
+    payload: AgentSessionContinueRequest,
+    current_user: UserProfile = Depends(get_current_user),
+):
+    try:
+        store.append_agent_user_message(current_user.id, session_id, payload.prompt)
+        session = store.get_agent_session(current_user.id, session_id)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    agent_coordinator.continue_session(session_id)
+    return AgentSessionResponse(item=session)
+
+
+@app.post("/api/v1/agent-sessions/{session_id}/stop", response_model=AgentSessionResponse)
+def stop_agent_session(
+    session_id: str,
+    current_user: UserProfile = Depends(get_current_user),
+):
+    try:
+        session = store.stop_agent_session(current_user.id, session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return AgentSessionResponse(item=session)
 
 
 @app.get("/api/v1/agent-sessions/{session_id}/messages", response_model=AgentMessageListResponse)

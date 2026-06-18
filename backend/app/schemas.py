@@ -234,6 +234,10 @@ class AgentSessionCreateRequest(BaseModel):
     title: Optional[str] = None
 
 
+class AgentSessionContinueRequest(BaseModel):
+    prompt: str
+
+
 class AgentSession(BaseModel):
     id: str
     user_id: int

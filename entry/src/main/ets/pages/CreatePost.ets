@@ -416,6 +416,25 @@ struct CreatePost {
     });
   }
 
+  private openAgentReview(): void {
+    const draftText = [
+      this.title.trim().length > 0 ? `标题：${this.title.trim()}` : '',
+      this.summary.trim().length > 0 ? `摘要：${this.summary.trim()}` : '',
+      this.content.trim().length > 0 ? `正文：${this.content.trim().substring(0, 1600)}` : '',
+      this.aiPrompt.trim().length > 0 ? `补充想法：${this.aiPrompt.trim()}` : ''
+    ].filter((item: string) => item.length > 0).join('\n');
+    if (draftText.length === 0) {
+      this.aiStatusText = '先写一点草稿或想法，再发起评审';
+      return;
+    }
+    router.pushUrl({
+      url: 'pages/AgentMeeting',
+      params: {
+        prompt: `请围绕这篇科研日报草稿做一次多角色组会评审：\n${draftText}`
+      }
+    });
+  }
+
   private saveDraft(): void {
     dailyPostService.saveDraft(this.draftPayload()).then(() => {
       this.statusText = '草稿已保存';
@@ -786,6 +805,16 @@ struct CreatePost {
           });
       }
       .width('100%');
+
+      Button('多角色评审草稿')
+        .height(42)
+        .width('100%')
+        .fontColor(AppColor.accentStrong)
+        .backgroundColor(AppColor.accentSoft)
+        .borderRadius(Radius.lg)
+        .onClick(() => {
+          this.openAgentReview();
+        });
 
       if (this.aiStatusText.length > 0) {
         Text(this.aiStatusText)
