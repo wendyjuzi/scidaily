@@ -3380,6 +3380,10 @@ struct Index {
               router.pushUrl({ url: 'pages/ResearchDashboard' });
             });
             Divider().color(AppColor.border).margin({ left: 64, right: Space.md });
+            this.menuRow('✎', '科研灵感箱', 0, () => {
+              router.pushUrl({ url: 'pages/InspirationBox' });
+            });
+            Divider().color(AppColor.border).margin({ left: 64, right: Space.md });
             this.menuRow('▦', '文献 PDF 库', 0, () => {
               router.pushUrl({ url: 'pages/PaperLibrary' });
             });

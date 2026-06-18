@@ -17,5 +17,6 @@
 /.appdata
 /backend/outputs
 /backend/data
+/backend/.env
 *.db
 **/__pycache__

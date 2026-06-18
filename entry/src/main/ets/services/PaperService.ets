@@ -114,6 +114,9 @@ class PaperService {
 
   async saveProgress(paperId: string, currentPage: number, progress: number): Promise<void> {
     this.saveProgressLocal(paperId, currentPage, progress);
+    if (paperId.startsWith('uploaded-')) {
+      return;
+    }
     if (!authService.isLoggedIn()) {
       return;
     }

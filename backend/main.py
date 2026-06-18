@@ -11,6 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from app.dependencies import get_current_user
 from app.schemas import (
     ApiMessage,
+    AiCreatorRequest,
+    AiCreatorResponse,
     AiWorkbenchRequest,
     AiWorkbenchResponse,
     AuthResponse,
@@ -27,6 +29,11 @@ from app.schemas import (
     DailyTemplate,
     ImageUploadRequest,
     ImageUploadResponse,
+    InspirationCreateRequest,
+    InspirationDraftResponse,
+    InspirationItem,
+    InspirationListResponse,
+    InspirationUpdateRequest,
     LoginRequest,
     MessageSettings,
     NewsItem,
@@ -36,6 +43,8 @@ from app.schemas import (
     PaperItem,
     PaperListResponse,
     PasswordResetRequest,
+    PdfUploadRequest,
+    PdfUploadResponse,
     InteractionState,
     PersonalItem,
     PersonalItemActionRequest,
@@ -57,7 +66,12 @@ from app.schemas import (
     UserProfile,
     UserUpdateRequest,
 )
-from app.services.ai_service import AiProviderError, ai_mode_title, generate_workbench_answer
+from app.services.ai_service import (
+    AiProviderError,
+    ai_mode_title,
+    generate_creator_result,
+    generate_workbench_answer,
+)
 from app.services.news_service import get_categories, get_daily_news, get_news_by_id
 from app.storage import store
 
@@ -94,8 +108,16 @@ def image_extension(filename: str) -> str:
     return suffix
 
 
+def pdf_extension(filename: str) -> str:
+    safe_name = re.sub(r"[^a-zA-Z0-9_.-]+", "_", filename.strip())
+    suffix = Path(safe_name).suffix.lower()
+    if suffix != ".pdf":
+        raise ValueError("Unsupported PDF type")
+    return suffix
+
+
 def decode_image_content(content_base64: str) -> bytes:
-    if len(content_base64) > 8_000_000:
+    if len(content_base64) > 16_000_000:
         raise ValueError("Image is too large")
     if "," in content_base64 and content_base64.split(",", 1)[0].startswith("data:image/"):
         content_base64 = content_base64.split(",", 1)[1]
@@ -103,6 +125,20 @@ def decode_image_content(content_base64: str) -> bytes:
         return base64.b64decode(content_base64, validate=True)
     except ValueError as exc:
         raise ValueError("Invalid image content") from exc
+
+
+def decode_pdf_content(content_base64: str) -> bytes:
+    if len(content_base64) > 40_000_000:
+        raise ValueError("PDF is too large")
+    if "," in content_base64 and content_base64.split(",", 1)[0].startswith("data:application/pdf"):
+        content_base64 = content_base64.split(",", 1)[1]
+    try:
+        data = base64.b64decode(content_base64, validate=True)
+    except ValueError as exc:
+        raise ValueError("Invalid PDF content") from exc
+    if not data.startswith(b"%PDF"):
+        raise ValueError("Invalid PDF content")
+    return data
 
 
 @app.get("/api/v1/health", response_model=ApiMessage)
@@ -124,6 +160,37 @@ def ai_workbench(payload: AiWorkbenchRequest):
         mode=payload.mode,
         title=title,
         answer=answer,
+        source="AI 生成",
+    )
+
+
+@app.post("/api/v1/ai/creator", response_model=AiCreatorResponse)
+def ai_creator(payload: AiCreatorRequest):
+    try:
+        result = generate_creator_result(payload.mode, payload.prompt, {
+            "title": payload.title or "",
+            "summary": payload.summary or "",
+            "content": payload.content or "",
+            "category_name": payload.category_name or "",
+            "tags": payload.tags,
+            "paper_title": payload.paper_title or "",
+            "paper_abstract": payload.paper_abstract or "",
+            "paper_doi": payload.paper_doi or "",
+            "paper_source_url": payload.paper_source_url or "",
+            "paper_pdf_url": payload.paper_pdf_url or "",
+        })
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    except AiProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return AiCreatorResponse(
+        mode=payload.mode,
+        title=result["title"],
+        summary=result["summary"],
+        content=result["content"],
+        tags=result["tags"],
+        topic=result["topic"],
+        note=result["note"],
         source="AI 生成",
     )
 
@@ -226,6 +293,19 @@ def upload_image(payload: ImageUploadRequest, current_user: UserProfile = Depend
     target = UPLOAD_DIR / filename
     target.write_bytes(image_bytes)
     return ImageUploadResponse(url=f"/uploads/{filename}")
+
+
+@app.post("/api/v1/uploads/pdfs", response_model=PdfUploadResponse, status_code=status.HTTP_201_CREATED)
+def upload_pdf(payload: PdfUploadRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        extension = pdf_extension(payload.filename)
+        pdf_bytes = decode_pdf_content(payload.content_base64)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    filename = f"u{current_user.id}-{secrets.token_hex(12)}{extension}"
+    target = UPLOAD_DIR / filename
+    target.write_bytes(pdf_bytes)
+    return PdfUploadResponse(url=f"/uploads/{filename}")
 
 
 @app.get("/api/v1/daily-posts/{post_id}", response_model=DailyPost)
@@ -573,6 +653,45 @@ def add_my_history(payload: PersonalItemActionRequest, current_user: UserProfile
 def clear_my_history(current_user: UserProfile = Depends(get_current_user)):
     store.clear_history(current_user.id)
     return ApiMessage(message="Browsing history cleared")
+
+
+@app.get("/api/v1/users/me/inspirations", response_model=InspirationListResponse)
+def my_inspirations(current_user: UserProfile = Depends(get_current_user)):
+    return InspirationListResponse(items=store.list_inspirations(current_user.id))
+
+
+@app.post("/api/v1/users/me/inspirations", response_model=InspirationItem, status_code=status.HTTP_201_CREATED)
+def create_my_inspiration(payload: InspirationCreateRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.create_inspiration(current_user.id, payload)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.put("/api/v1/users/me/inspirations/{inspiration_id}", response_model=InspirationItem)
+def update_my_inspiration(
+    inspiration_id: str,
+    payload: InspirationUpdateRequest,
+    current_user: UserProfile = Depends(get_current_user),
+):
+    try:
+        return store.update_inspiration(current_user.id, inspiration_id, payload)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.post("/api/v1/users/me/inspirations/{inspiration_id}/draft", response_model=InspirationDraftResponse)
+def build_my_inspiration_draft(inspiration_id: str, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        return store.build_inspiration_draft(current_user.id, inspiration_id)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.delete("/api/v1/users/me/inspirations/{inspiration_id}", response_model=ApiMessage)
+def delete_my_inspiration(inspiration_id: str, current_user: UserProfile = Depends(get_current_user)):
+    store.delete_inspiration(current_user.id, inspiration_id)
+    return ApiMessage(message="Inspiration deleted")
 
 
 @app.get("/api/v1/users/me/notifications", response_model=NotificationListResponse)

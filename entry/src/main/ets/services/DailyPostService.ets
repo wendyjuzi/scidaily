@@ -1,6 +1,7 @@
 import http from '@ohos.net.http';
 import { DailyPost, DailyPostDraft, DailyTemplate, TopicCategory, TopicTag } from '../models/DailyPost';
 import { UserProfile } from '../models/User';
+import { API_BASE_URL } from '../config/AppConfig';
 import { AppErrorCode, AppException, globalErrorHandler } from '../utils/AppError';
 import { authService } from './AuthService';
 import { httpClient } from './HttpClient';
@@ -70,6 +71,10 @@ interface DailyPostPayload {
 }
 
 interface ImageUploadDto {
+  url: string;
+}
+
+interface PdfUploadDto {
   url: string;
 }
 
@@ -386,7 +391,22 @@ class DailyPostService {
         content_base64: contentBase64
       })
     });
-    return (JSON.parse(response) as ImageUploadDto).url;
+    return this.normalizeAssetUrl((JSON.parse(response) as ImageUploadDto).url);
+  }
+
+  async uploadPdf(filename: string, contentBase64: string): Promise<string> {
+    this.ensureLoggedIn();
+    const response = await httpClient.request({
+      path: '/uploads/pdfs',
+      method: http.RequestMethod.POST,
+      token: authService.getToken(),
+      timeoutMs: 30000,
+      body: JSON.stringify({
+        filename,
+        content_base64: contentBase64
+      })
+    });
+    return this.normalizeAssetUrl((JSON.parse(response) as PdfUploadDto).url);
   }
 
   applyTemplate(template: DailyTemplate): string {
@@ -511,8 +531,8 @@ class DailyPostService {
       title: dto.title,
       summary: dto.summary,
       content: dto.content,
-      coverUrl: dto.cover_url,
-      imageUrls: dto.image_urls,
+      coverUrl: this.normalizeAssetUrl(dto.cover_url),
+      imageUrls: dto.image_urls.map((url: string) => this.normalizeAssetUrl(url)),
       categoryId: dto.category_id,
       categoryName: dto.category_name,
       tags: dto.tags,
@@ -526,6 +546,17 @@ class DailyPostService {
 
   private isPlaceholderPost(item: DailyPost): boolean {
     return this.isPlaceholderText(item.title) && this.isPlaceholderText(item.summary);
+  }
+
+  private normalizeAssetUrl(url: string): string {
+    const text = url.trim();
+    if (text.length === 0 || text.startsWith('http://') || text.startsWith('https://')) {
+      return text;
+    }
+    const marker = '/api/v1';
+    const index = API_BASE_URL.indexOf(marker);
+    const origin = index >= 0 ? API_BASE_URL.substring(0, index) : API_BASE_URL;
+    return text.startsWith('/') ? `${origin}${text}` : `${origin}/${text}`;
   }
 
   private isPlaceholderText(value: string): boolean {
