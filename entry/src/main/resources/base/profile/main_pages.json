@@ -13,6 +13,7 @@
     "pages/ProfileEdit",
     "pages/PersonalList",
     "pages/InspirationBox",
+    "pages/AgentMeeting",
     "pages/PaperLibrary",
     "pages/PDFReader",
     "pages/ResearchDashboard",

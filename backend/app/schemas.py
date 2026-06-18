@@ -218,6 +218,64 @@ class InspirationDraftResponse(BaseModel):
     tag_ids: List[str]
 
 
+class PostInspirationRequest(BaseModel):
+    post_id: str
+
+
+class PostInspirationResponse(BaseModel):
+    item: InspirationItem
+    source: str
+
+
+class AgentSessionCreateRequest(BaseModel):
+    prompt: str
+    source_type: Optional[str] = None
+    source_id: Optional[str] = None
+    title: Optional[str] = None
+
+
+class AgentSession(BaseModel):
+    id: str
+    user_id: int
+    title: str
+    input: str
+    source_type: str
+    source_id: str
+    status: str
+    current_round: int
+    memory_version: int
+    created_at: str
+    updated_at: str
+
+
+class AgentMessage(BaseModel):
+    id: int
+    session_id: str
+    agent_key: str
+    agent_name: str
+    role: str
+    content: str
+    status: str
+    round: int
+    context_version_started: int
+    created_at: str
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class AgentSessionResponse(BaseModel):
+    item: AgentSession
+
+
+class AgentSessionListResponse(BaseModel):
+    items: List[AgentSession]
+
+
+class AgentMessageListResponse(BaseModel):
+    session: AgentSession
+    messages: List[AgentMessage]
+
+
 class DailyTemplate(BaseModel):
     id: str
     title: str

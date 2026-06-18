@@ -99,10 +99,17 @@ def generate_creator_result(mode: str, prompt: str, context: Dict[str, Any]) -> 
     return parse_creator_response(raw_text)
 
 
+def generate_post_inspiration(post: Dict[str, Any]) -> Dict[str, str]:
+    cfg = load_ai_config()
+    payload = build_post_inspiration_payload(post, cfg.model)
+    raw_text = call_chat_completions(cfg, payload)
+    return parse_post_inspiration_response(raw_text)
+
+
 def load_ai_config() -> AiConfig:
     load_dotenv_file()
 
-    timeout_seconds = int(os.getenv("AI_TIMEOUT_SECONDS", "60"))
+    timeout_seconds = int(os.getenv("AI_TIMEOUT_SECONDS", "70"))
     if os.getenv("DEEPSEEK_API_KEY", "").strip():
         return AiConfig(
             api_key=os.getenv("DEEPSEEK_API_KEY", "").strip(),
@@ -240,6 +247,37 @@ def build_creator_payload(
     }
 
 
+def build_post_inspiration_payload(post: Dict[str, Any], model: str) -> Dict[str, object]:
+    if not model:
+        raise ValueError("未配置 AI_MODEL。SiliconFlow 等服务需要显式设置模型名。")
+    post_text = (
+        f"帖子标题：{post.get('title', '')}\n"
+        f"作者：{post.get('author_name', '')}\n"
+        f"分类：{post.get('category_name', '')}\n"
+        f"标签：{', '.join(post.get('tags', []))}\n"
+        f"摘要：{post.get('summary', '')}\n"
+        f"正文：{post.get('content', '')}"
+    )
+    system_prompt = (
+        "你是科研日报 APP 的灵感整理助手。用户正在浏览社区帖子，想把帖子转化成自己的科研灵感。"
+        "请提炼出可继续创作科研日报的灵感，不要照抄原文，不要编造新实验数据。"
+        "输出必须是 JSON，不要 Markdown 代码块，不要额外解释。"
+        "JSON 字段固定为：content、scene、source。"
+        "content 写成一段 120 到 220 字的中文灵感，包含：帖子启发、可验证问题、下一步写日报或实验的方向。"
+        "scene 只能是 idea、experiment、paper、meeting、question 之一。"
+        "source 写成 20 字以内来源，例如：社区帖子·文献启发。"
+    )
+    user_prompt = f"请把下面这篇社区帖子整理成一条灵感箱记录：\n\n{post_text}"
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": float(os.getenv("AI_TEMPERATURE", "0.35")),
+    }
+
+
 def parse_creator_response(raw_text: str) -> Dict[str, Any]:
     text = raw_text.strip()
     json_text = extract_json_object(text)
@@ -261,6 +299,31 @@ def parse_creator_response(raw_text: str) -> Dict[str, Any]:
         "tags": normalize_tags(data.get("tags")),
         "topic": safe_text(data.get("topic")),
         "note": safe_text(data.get("note")),
+    }
+
+
+def parse_post_inspiration_response(raw_text: str) -> Dict[str, str]:
+    text = raw_text.strip()
+    json_text = extract_json_object(text)
+    try:
+        data = json.loads(json_text)
+    except ValueError:
+        return {
+            "content": text,
+            "scene": "idea",
+            "source": "社区帖子",
+        }
+    scene = safe_text(data.get("scene")).lower()
+    if scene not in ["idea", "experiment", "paper", "meeting", "question"]:
+        scene = "idea"
+    content = safe_text(data.get("content"))
+    if not content:
+        content = text
+    source = safe_text(data.get("source"))[:20] or "社区帖子"
+    return {
+        "content": content,
+        "scene": scene,
+        "source": source,
     }
 
 

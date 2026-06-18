@@ -824,6 +824,13 @@ struct Index {
     });
   }
 
+  private openAgentMeeting(prompt: string = ''): void {
+    router.pushUrl({
+      url: 'pages/AgentMeeting',
+      params: { prompt }
+    });
+  }
+
   private currentConversation(): MessageConversation | undefined {
     return this.messageConversations.find((item: MessageConversation) => item.id === this.activeConversationId);
   }
@@ -2476,6 +2483,48 @@ struct Index {
   }
 
   @Builder
+  private agentMeetingEntry(): void {
+    Column({ space: Space.sm }) {
+      Row() {
+        Column({ space: Space.xs }) {
+          Text('多角色组会')
+            .fontSize(Font.title)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppColor.textTitle);
+          Text('导师、评审、实验设计、文献整理会先独立判断，再给出综合建议。')
+            .fontSize(Font.small)
+            .fontColor(AppColor.textSecondary)
+            .lineHeight(18);
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start);
+        Text('进入')
+          .fontSize(Font.small)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(AppColor.textOnPrimary)
+          .padding({ left: Space.md, right: Space.md, top: Space.xs, bottom: Space.xs })
+          .backgroundColor(AppColor.primary)
+          .borderRadius(Radius.pill);
+      }
+      .width('100%');
+      Row({ space: Space.sm }) {
+        this.aiPromptPreset('让多角色组会评估：这个研究想法是否值得继续做？');
+        this.aiPromptPreset('让多角色组会检查：我的实验方案哪里容易被质疑？');
+      }
+      .width('100%');
+    }
+    .width('100%')
+    .padding(Space.lg)
+    .backgroundColor(AppColor.surface)
+    .borderRadius(Radius.lg)
+    .border({ width: 1, color: AppColor.border })
+    .shadow(Elevation.card)
+    .onClick(() => {
+      this.openAgentMeeting(this.aiPrompt.trim());
+    });
+  }
+
+  @Builder
   private aiChatBubble(message: AiChatMessage): void {
     Column({ space: Space.xs }) {
       Row({ space: Space.sm }) {
@@ -2595,6 +2644,8 @@ struct Index {
           .width('100%');
         }
         .width('100%');
+
+        this.agentMeetingEntry();
 
         this.aiChatPanel();
 
