@@ -6,6 +6,7 @@ import json
 import re
 import secrets
 import sqlite3
+import threading
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -69,6 +70,7 @@ class AppStore:
     def __init__(self, db_path: Path = DB_PATH) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys=ON;")
@@ -629,63 +631,65 @@ class AppStore:
         offset: int = 0,
         author_id: Optional[int] = None,
     ) -> tuple[List[DailyPost], int, bool]:
-        limit = max(1, min(limit, 50))
-        offset = max(0, offset)
-        where = []
-        params: list[object] = []
-        if status_filter != "all":
-            where.append("daily_posts.status = ?")
-            params.append(status_filter)
-        if category_id:
-            where.append("daily_posts.category_id = ?")
-            params.append(category_id)
-        if author_id is not None:
-            where.append("daily_posts.author_id = ?")
-            params.append(author_id)
-        if tag_id:
-            where.append(
-                """
-                EXISTS (
-                    SELECT 1 FROM daily_post_tags
-                    WHERE daily_post_tags.post_id = daily_posts.id
-                    AND daily_post_tags.tag_id = ?
+        with self._lock:
+            limit = max(1, min(limit, 50))
+            offset = max(0, offset)
+            where = []
+            params: list[object] = []
+            if status_filter != "all":
+                where.append("daily_posts.status = ?")
+                params.append(status_filter)
+            if category_id:
+                where.append("daily_posts.category_id = ?")
+                params.append(category_id)
+            if author_id is not None:
+                where.append("daily_posts.author_id = ?")
+                params.append(author_id)
+            if tag_id:
+                where.append(
+                    """
+                    EXISTS (
+                        SELECT 1 FROM daily_post_tags
+                        WHERE daily_post_tags.post_id = daily_posts.id
+                        AND daily_post_tags.tag_id = ?
+                    )
+                    """
                 )
-                """
-            )
-            params.append(tag_id)
-        where_sql = "WHERE " + " AND ".join(where) if where else ""
-        rows = self.conn.execute(
-            f"""
-            SELECT daily_posts.*, users.nickname AS author_name, topic_categories.name AS category_name
-            FROM daily_posts
-            JOIN users ON users.id = daily_posts.author_id
-            JOIN topic_categories ON topic_categories.id = daily_posts.category_id
-            {where_sql}
-            ORDER BY COALESCE(daily_posts.published_at, daily_posts.updated_at) DESC
-            LIMIT ? OFFSET ?
-            """,
-            (*params, limit + 1, offset),
-        ).fetchall()
-        has_more = len(rows) > limit
-        page_rows = rows[:limit]
-        return [self._daily_post_from_row(row) for row in page_rows], offset + len(page_rows), has_more
+                params.append(tag_id)
+            where_sql = "WHERE " + " AND ".join(where) if where else ""
+            rows = self.conn.execute(
+                f"""
+                SELECT daily_posts.*, users.nickname AS author_name, topic_categories.name AS category_name
+                FROM daily_posts
+                JOIN users ON users.id = daily_posts.author_id
+                JOIN topic_categories ON topic_categories.id = daily_posts.category_id
+                {where_sql}
+                ORDER BY COALESCE(daily_posts.published_at, daily_posts.updated_at) DESC
+                LIMIT ? OFFSET ?
+                """,
+                (*params, limit + 1, offset),
+            ).fetchall()
+            has_more = len(rows) > limit
+            page_rows = rows[:limit]
+            return [self._daily_post_from_row(row) for row in page_rows], offset + len(page_rows), has_more
 
     def get_daily_post(self, post_id: str, include_draft: bool = False, user_id: Optional[int] = None) -> DailyPost:
-        row = self.conn.execute(
-            """
-            SELECT daily_posts.*, users.nickname AS author_name, topic_categories.name AS category_name
-            FROM daily_posts
-            JOIN users ON users.id = daily_posts.author_id
-            JOIN topic_categories ON topic_categories.id = daily_posts.category_id
-            WHERE daily_posts.id = ?
-            """,
-            (post_id,),
-        ).fetchone()
-        if row is None:
-            raise ValueError("Daily post not found")
-        if row["status"] != "published" and not include_draft and row["author_id"] != user_id:
-            raise ValueError("Daily post not found")
-        return self._daily_post_from_row(row)
+        with self._lock:
+            row = self.conn.execute(
+                """
+                SELECT daily_posts.*, users.nickname AS author_name, topic_categories.name AS category_name
+                FROM daily_posts
+                JOIN users ON users.id = daily_posts.author_id
+                JOIN topic_categories ON topic_categories.id = daily_posts.category_id
+                WHERE daily_posts.id = ?
+                """,
+                (post_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Daily post not found")
+            if row["status"] != "published" and not include_draft and row["author_id"] != user_id:
+                raise ValueError("Daily post not found")
+            return self._daily_post_from_row(row)
 
     def create_daily_post(self, user_id: int, payload: DailyPostCreateRequest) -> DailyPost:
         self._validate_category_and_tags(payload.category_id, payload.tag_ids)
@@ -1064,6 +1068,7 @@ class AppStore:
         self.conn.commit()
 
     def _daily_post_from_row(self, row: sqlite3.Row) -> DailyPost:
+        post_id = str(row["id"])
         tag_rows = self.conn.execute(
             """
             SELECT research_tags.id, research_tags.name
@@ -1072,10 +1077,10 @@ class AppStore:
             WHERE daily_post_tags.post_id = ?
             ORDER BY research_tags.name ASC
             """,
-            (row["id"],),
+            (post_id,),
         ).fetchall()
         return DailyPost(
-            id=row["id"],
+            id=post_id,
             author_id=int(row["author_id"]),
             author_name=row["author_name"],
             title=row["title"],
