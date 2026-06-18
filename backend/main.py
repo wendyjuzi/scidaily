@@ -10,6 +10,10 @@ from fastapi.staticfiles import StaticFiles
 
 from app.dependencies import get_current_user
 from app.schemas import (
+    AgentMessageListResponse,
+    AgentSessionCreateRequest,
+    AgentSessionListResponse,
+    AgentSessionResponse,
     ApiMessage,
     AiCreatorRequest,
     AiCreatorResponse,
@@ -45,6 +49,8 @@ from app.schemas import (
     PasswordResetRequest,
     PdfUploadRequest,
     PdfUploadResponse,
+    PostInspirationRequest,
+    PostInspirationResponse,
     InteractionState,
     PersonalItem,
     PersonalItemActionRequest,
@@ -70,12 +76,15 @@ from app.services.ai_service import (
     AiProviderError,
     ai_mode_title,
     generate_creator_result,
+    generate_post_inspiration,
     generate_workbench_answer,
 )
+from app.services.agent_service import AgentCoordinator
 from app.services.news_service import get_categories, get_daily_news, get_news_by_id
 from app.storage import store
 
 app = FastAPI(title="SciDaily API", version="0.2.0")
+agent_coordinator = AgentCoordinator(store)
 UPLOAD_DIR = Path(__file__).resolve().parent / "data" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
@@ -193,6 +202,43 @@ def ai_creator(payload: AiCreatorRequest):
         note=result["note"],
         source="AI 生成",
     )
+
+
+@app.post("/api/v1/agent-sessions", response_model=AgentSessionResponse, status_code=status.HTTP_201_CREATED)
+def create_agent_session(
+    payload: AgentSessionCreateRequest,
+    current_user: UserProfile = Depends(get_current_user),
+):
+    try:
+        session = store.create_agent_session(
+            current_user.id,
+            payload.title or "",
+            payload.prompt,
+            payload.source_type or "",
+            payload.source_id or "",
+        )
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    agent_coordinator.start_session(session)
+    return AgentSessionResponse(item=session)
+
+
+@app.get("/api/v1/agent-sessions", response_model=AgentSessionListResponse)
+def list_agent_sessions(current_user: UserProfile = Depends(get_current_user)):
+    return AgentSessionListResponse(items=store.list_agent_sessions(current_user.id))
+
+
+@app.get("/api/v1/agent-sessions/{session_id}/messages", response_model=AgentMessageListResponse)
+def list_agent_session_messages(
+    session_id: str,
+    current_user: UserProfile = Depends(get_current_user),
+):
+    try:
+        session = store.get_agent_session(current_user.id, session_id)
+        messages = store.list_agent_messages(current_user.id, session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return AgentMessageListResponse(session=session, messages=messages)
 
 
 @app.get("/api/v1/news/daily", response_model=NewsListResponse)
@@ -666,6 +712,33 @@ def create_my_inspiration(payload: InspirationCreateRequest, current_user: UserP
         return store.create_inspiration(current_user.id, payload)
     except ValueError as exc:
         raise bad_request(exc) from exc
+
+
+@app.post("/api/v1/users/me/inspirations/from-post", response_model=PostInspirationResponse)
+def create_my_inspiration_from_post(payload: PostInspirationRequest, current_user: UserProfile = Depends(get_current_user)):
+    try:
+        post = store.get_daily_post(payload.post_id, include_draft=False, user_id=current_user.id)
+        result = generate_post_inspiration({
+            "title": post.title,
+            "summary": post.summary,
+            "content": post.content,
+            "author_name": post.author_name,
+            "category_name": post.category_name,
+            "tags": post.tags,
+        })
+        item = store.create_inspiration(
+            current_user.id,
+            InspirationCreateRequest(
+                content=result["content"],
+                scene=result["scene"],
+                source=result["source"],
+            ),
+        )
+        return PostInspirationResponse(item=item, source="AI 生成")
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    except AiProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 @app.put("/api/v1/users/me/inspirations/{inspiration_id}", response_model=InspirationItem)

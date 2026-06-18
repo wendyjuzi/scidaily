@@ -107,6 +107,15 @@ struct InspirationBox {
     });
   }
 
+  private openMeeting(item: InspirationItem): void {
+    router.pushUrl({
+      url: 'pages/AgentMeeting',
+      params: {
+        prompt: `请围绕这条科研灵感做一次多角色组会讨论：\n类型：${this.sceneLabel(item.scene)}\n来源：${item.source}\n内容：${item.content}`
+      }
+    });
+  }
+
   private localDraftFromItem(item: InspirationItem): InspirationDraft {
     const firstLine = item.content.split('\n')[0].trim();
     const titleSeed = firstLine.length > 22 ? `${firstLine.substring(0, 22)}...` : firstLine;
@@ -238,6 +247,15 @@ struct InspirationBox {
           });
       }
       .width('100%');
+      Button('多角色组会评审')
+        .height(34)
+        .width('100%')
+        .fontColor(AppColor.accentStrong)
+        .backgroundColor(AppColor.accentSoft)
+        .borderRadius(Radius.lg)
+        .onClick(() => {
+          this.openMeeting(item);
+        });
     }
     .width('100%')
     .padding(Space.lg)

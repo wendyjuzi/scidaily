@@ -154,13 +154,7 @@ class AuthService {
         throw globalErrorHandler.unauthorized('登录失败，请稍后重试。');
       }
     }
-    if (account === 'demo' && password === '123456') {
-      return this.activateSession(this.createDemoUser(), this.createToken());
-    }
-    if (this.registeredUser && account === this.registeredUser.username && password === this.registeredPassword) {
-      return this.activateSession(this.registeredUser, this.createToken());
-    }
-    throw globalErrorHandler.unauthorized('用户名或密码错误。');
+    throw globalErrorHandler.network('后端连接失败，请检查服务是否已启动。');
   }
 
   async register(username: string, password: string, nickname: string, email: string): Promise<AuthSession> {

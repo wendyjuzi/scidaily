@@ -4,6 +4,7 @@ import { DailyPost } from '../models/DailyPost';
 import { authService } from '../services/AuthService';
 import { communityService } from '../services/CommunityService';
 import { dailyPostService } from '../services/DailyPostService';
+import { inspirationService } from '../services/InspirationService';
 import { personalCenterService } from '../services/PersonalCenterService';
 import { AppColor, Space, Radius, Font, Elevation } from '../theme/AppTheme';
 
@@ -39,6 +40,7 @@ struct DailyPostDetail {
   @State showForwardPanel: boolean = false;
   @State previewImageUrl: string = '';
   @State toastText: string = '';
+  @State inspirationGenerating: boolean = false;
   private likeInteractionTouched: boolean = false;
   private collectionInteractionTouched: boolean = false;
 
@@ -226,6 +228,25 @@ struct DailyPostDetail {
     });
   }
 
+  private addToInspirationBox(): void {
+    const item = this.post;
+    if (item === undefined || this.inspirationGenerating) {
+      return;
+    }
+    if (!this.ensureLoggedIn()) {
+      return;
+    }
+    this.inspirationGenerating = true;
+    this.toastText = '正在整理成灵感...';
+    inspirationService.createFromPost(item.id).then(() => {
+      this.toastText = '已加入科研灵感箱';
+    }).catch((error: Error) => {
+      this.toastText = error.message.length > 0 ? error.message : '加入灵感箱失败';
+    }).finally(() => {
+      this.inspirationGenerating = false;
+    });
+  }
+
   private toggleLaterRead(): void {
     this.laterRead = !this.laterRead;
     this.toastText = this.laterRead ? '已加入稍后读' : '已移出稍后读';
@@ -248,6 +269,19 @@ struct DailyPostDetail {
 
   private openMyCollections(): void {
     router.pushUrl({ url: 'pages/PersonalList', params: { type: 'collections' } });
+  }
+
+  private openAgentMeetingForPost(): void {
+    const item = this.post;
+    if (item === undefined) {
+      return;
+    }
+    router.pushUrl({
+      url: 'pages/AgentMeeting',
+      params: {
+        prompt: `请围绕这篇科研日报做一次多角色组会讨论：\n标题：${item.title}\n摘要：${item.summary}\n标签：${item.tags.join('、')}\n正文：${item.content.substring(0, 1200)}`
+      }
+    });
   }
 
   private openAuthorProfile(): void {
@@ -747,6 +781,17 @@ struct DailyPostDetail {
           .lineHeight(20)
           .width('100%');
       }
+      Row({ space: Space.sm }) {
+        this.quickActionChip('多角色组会', false, () => {
+          this.openAgentMeetingForPost();
+        });
+        Text('让导师、评审和实验设计一起看这篇内容')
+          .fontSize(Font.caption)
+          .fontColor(AppColor.textMuted)
+          .layoutWeight(1);
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center);
     }
     .width('100%')
     .padding(Space.md)
@@ -891,6 +936,26 @@ struct DailyPostDetail {
         this.toastText = `${label}已加入当前复盘上下文`;
       }
     });
+  }
+
+  @Builder
+  private inspirationActionButton(): void {
+    Row() {
+      Text(this.inspirationGenerating ? '整理中...' : '灵感')
+        .fontSize(Font.body)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.inspirationGenerating ? AppColor.textMuted : AppColor.textBody);
+    }
+      .height(42)
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(AppColor.surfaceSoft)
+      .borderRadius(Radius.lg)
+      .enabled(!this.inspirationGenerating)
+      .onClick(() => {
+        this.addToInspirationBox();
+      });
   }
 
   @Builder
@@ -1364,6 +1429,7 @@ struct DailyPostDetail {
         Row({ space: Space.sm }) {
           this.likeActionButton();
           this.collectionActionButton();
+          this.inspirationActionButton();
         }
         .width('100%')
         .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.md })

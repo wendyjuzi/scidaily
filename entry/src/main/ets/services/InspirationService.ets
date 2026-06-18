@@ -39,6 +39,11 @@ interface InspirationDraftDto {
   tag_ids: string[];
 }
 
+interface PostInspirationDto {
+  item: InspirationItemDto;
+  source: string;
+}
+
 class InspirationService {
   async list(): Promise<InspirationItem[]> {
     this.ensureLoggedIn();
@@ -112,6 +117,20 @@ class InspirationService {
       categoryId: dto.category_id,
       tagIds: dto.tag_ids
     };
+  }
+
+  async createFromPost(postId: string): Promise<InspirationItem> {
+    this.ensureLoggedIn();
+    const response = await httpClient.request({
+      path: '/users/me/inspirations/from-post',
+      method: http.RequestMethod.POST,
+      token: authService.getToken(),
+      body: JSON.stringify({
+        post_id: postId
+      }),
+      timeoutMs: 70000
+    });
+    return this.fromDto((JSON.parse(response) as PostInspirationDto).item);
   }
 
   private ensureLoggedIn(): void {
