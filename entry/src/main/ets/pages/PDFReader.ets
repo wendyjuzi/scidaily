@@ -68,6 +68,7 @@ struct PDFReader {
   @State pdfOutline: PaperSection[] = [];
   @State currentPageText: string = '';
   @State selectedPdfText: string = '';
+  @State textSelectionMode: boolean = false;
   private selectedRectsJson: string = '';
   private selectedRectPage: number = 0;
   private htmlLoaded: boolean = false;
@@ -96,6 +97,10 @@ struct PDFReader {
     },
     'onSelection': (value: number | string) => {
       this.selectedPdfText = String(value);
+      if (this.selectedPdfText.trim().length > 0) {
+        this.textSelectionMode = false;
+        this.runViewer('SciViewer.setSelectionMode(false)');
+      }
     },
     'onSelectionRect': (value: number | string) => {
       this.handleSelectionRect(String(value));
@@ -468,6 +473,14 @@ struct PDFReader {
     }
     this.noteDraft = text;
     this.statusText = '已引用选中文字';
+  }
+
+  private enterTextSelectionMode(): void {
+    this.sheetShown = false;
+    this.chromeShown = false;
+    this.textSelectionMode = true;
+    this.runViewer('SciViewer.setSelectionMode(true)');
+    this.statusText = '已进入选文模式：在 PDF 正文上长按并拖动选择文字';
   }
 
   private annotationsNote(): string {
@@ -901,6 +914,17 @@ struct PDFReader {
         .padding(Space.sm)
         .backgroundColor(this.readerPanelColor())
         .borderRadius(Radius.md);
+      } else {
+        Button('去 PDF 选文')
+          .height(40)
+          .width('100%')
+          .fontSize(Font.body)
+          .fontColor(AppColor.accent)
+          .backgroundColor(AppColor.accentSoft)
+          .borderRadius(Radius.lg)
+          .onClick(() => {
+            this.enterTextSelectionMode();
+          });
       }
       TextArea({ placeholder: '长按 PDF 选中文字后点“引用”，或直接手写批注', text: this.noteDraft })
         .height(64)
@@ -1002,11 +1026,30 @@ struct PDFReader {
       }
       .width('100%');
       Scroll() {
-        Text(this.aiResult.length > 0 ? this.aiResult : '选择一个 AI 阅读动作后，结果会显示在这里。')
-          .fontSize(Font.small)
-          .fontColor(this.readerTextColor())
-          .lineHeight(20)
-          .width('100%');
+        Column({ space: Space.sm }) {
+          if (this.aiResult.length > 0) {
+            Row() {
+              Text(this.aiResult)
+                .fontSize(Font.small)
+                .fontColor(this.readerTextColor())
+                .lineHeight(22)
+                .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+                .backgroundColor(this.readerSurfaceColor())
+                .border({ width: 1, color: this.readerBorderColor() })
+                .borderRadius(Radius.lg)
+                .width('92%');
+              Blank();
+            }
+            .width('100%');
+          } else {
+            Text('选择一个 AI 阅读动作后，结果会显示在这里。')
+              .fontSize(Font.small)
+              .fontColor(this.readerMutedColor())
+              .lineHeight(20)
+              .width('100%');
+          }
+        }
+        .width('100%');
       }
       .height(142)
       .padding(Space.sm)

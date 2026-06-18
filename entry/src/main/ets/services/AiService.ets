@@ -78,9 +78,10 @@ export interface AiCreatorResult {
 
 class AiService {
   async generate(mode: string, prompt: string, history: AiConversationMessage[]): Promise<AiWorkbenchResult> {
+    const cleanPrompt = `${this.normalizePrompt(prompt)}\n\n输出风格要求：请像真实聊天对话一样自然回答，不要使用 Markdown 符号，不要输出 **、###、- ** 这类标记。可以分段，但每段直接写中文标题和正文。`;
     const payload: AiWorkbenchRequestDto = {
       mode,
-      prompt: this.normalizePrompt(prompt),
+      prompt: cleanPrompt,
       history
     };
     const response = await httpClient.request({
@@ -93,7 +94,7 @@ class AiService {
     return {
       mode: dto.mode,
       title: dto.title,
-      answer: dto.answer,
+      answer: this.cleanChatText(dto.answer),
       source: dto.source
     };
   }
@@ -138,6 +139,29 @@ class AiService {
       return text;
     }
     return '当前研究问题';
+  }
+
+  private cleanChatText(text: string): string {
+    const lines = text.replace(/\r/g, '').split('\n');
+    const cleaned: string[] = [];
+    lines.forEach((line: string) => {
+      let item = line.trim();
+      if (item.length === 0) {
+        if (cleaned.length > 0 && cleaned[cleaned.length - 1].length > 0) {
+          cleaned.push('');
+        }
+        return;
+      }
+      item = item.replace(/^#{1,6}\s*/, '');
+      item = item.replace(/^[-*+]\s+/, '');
+      item = item.replace(/^\d+[\.\)]\s*/, '');
+      item = item.replace(/\*\*/g, '');
+      item = item.replace(/__/g, '');
+      item = item.replace(/`/g, '');
+      item = item.replace(/^\s*[-*+]\s*/, '');
+      cleaned.push(item.trim());
+    });
+    return cleaned.join('\n').replace(/\n{3,}/g, '\n\n').trim();
   }
 }
 
